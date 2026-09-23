@@ -143,19 +143,14 @@ node tools/experiment.mjs        # try economy / rival settings
 | **First prototype** | UNREADABLE (a rhythm duel vs a predicting AI), built, tested and dropped the same afternoon; kept in [archive/](archive/unreadable-v1/) |
 | **First public build** | 23 September 2026 |
 
-I started with the idea of a small-world crafting game: the player receives an item to build, explores the island to find
-the required resources, and crafts it before an AI rival can do the same.
+I started with the idea of creating a small world-crafting game where the player receives an item to build, explores the island to find the required resources, and crafts it before an AI rival can do the same.
 
-I described the core gameplay and the experience I wanted to create. I then worked with AI (Claude Code) to turn that idea
-into the game's systems: the recipes, resource mechanics, rival-learning system, progression and challenges. The AI wrote
-the code, the simulations and the tests.
+I explained the core gameplay, mechanics, progression, visual direction, and the overall experience I wanted to create. I then worked with AI to turn those ideas into the game's systems, recipes, resource mechanics, rival-learning system, progression, challenges, simulations, and supporting code.
 
-I kept refining the game by playing it and deciding what to change based on what worked and what didn't: I dropped the
-first prototype, pushed for a premium polish pass, and had the balance tuned with AI-run simulations. I also used AI to
-review the code, find problems and suggest improvements, which were then fixed.
+I kept refining the game by testing the mechanics, adjusting the balance, improving the gameplay flow, and changing things based on what worked and what didn't. I also used AI to help review the code, identify problems, suggest improvements, and build different parts of the prototype faster.
 
-The result is OUTCRAFT: a game built around exploration, resource gathering, crafting, and competing against a rival that
-learns from the way you play. Everything was designed to keep the experience simple, fast and replayable, while making
-every crafting decision feel like a race against your opponent.
+The result is OUTCRAFT — a game built around exploration, resource gathering, crafting, and competing against a rival that learns from the way you play.
 
-**No accounts. No trackers. No unnecessary network features.** The game's core experience runs locally on the device.
+Everything was designed to keep the experience simple, fast, and replayable, while making every crafting decision feel like a race against your opponent.
+
+No accounts. No trackers. No unnecessary network features. The game's core experience runs locally on the device.
