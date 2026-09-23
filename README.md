@@ -136,12 +136,7 @@ node tools/experiment.mjs        # try economy / rival settings
 
 ## About
 
-| | |
-|---|---|
-| **Designer** | B Manoj |
-| **Started** | 23 September 2026, 1:07 pm IST |
-| **First prototype** | UNREADABLE (a rhythm duel vs a predicting AI), built, tested and dropped the same afternoon; kept in [archive/](archive/unreadable-v1/) |
-| **First public build** | 23 September 2026 |
+**B Manoj** · started 23 September 2026 · completed 23 September 2026
 
 I started with the idea of creating a small world-crafting game where the player receives an item to build, explores the island to find the required resources, and crafts it before an AI rival can do the same.
 
