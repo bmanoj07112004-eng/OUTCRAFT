@@ -8,7 +8,7 @@
 > - A villager orders a Lantern; you and an AI rival race across a 9×13 island for the same scarce nodes. First to 3 crafted orders wins, in about a minute.
 > - The rival learns your route habits with five small, readable models and only goes out of its way to take a node on an informed read of you. Its target is on screen, every snatch is explained, and habit claims must pass a significance test.
 > - Built D1 hooks: a notebook that greets you with your habits, a Daily with streak and share grid, a Codex, a rival ladder, Tells.
-> - Bot sims, not humans: the rival reads a habitual bot at 90-91% (chance ~49%) and a random bot not at all. Weak spot, found by an AI reviewer's control arm: the reads change where it fights you, not yet who wins.
+> - In bot simulations the rival reads a habitual bot at 90-91% (chance ~49%) and a random bot not at all. Weak spot, found by an AI reviewer's control arm: the reads change where it fights you, not yet who wins.
 > - First test: can players tell the reading rival from one with its reads off, which bots beat about as often?
 
 I design systems that read players and let players read them back. OUTCRAFT is the smallest playable version of that idea I could build.
@@ -111,7 +111,7 @@ Streak freezes will be earned, never sold (1 per 7-day streak, max 2; not built)
 
 **Honesty rules.** (1) Each snatch names its evidence from the exact choice context the rival committed on: a habit with counts (Beeline and By the Book only in the direction the evidence points), your heading, or luck ("FOX only gave that node 22%"); habit and heading reads add a counter-tip. The counts are decay-weighted, so the copy should say "recent trips". (2) A title-screen habit needs a ≥ 15-point effect and a z-score above a bar raised for repeated looks and for the number of statistics searched (2.9 to 3.6). (3) Tells have their own gate (§3). Checked after each of 15 matches vs FOX, 300 random choosers ([sim-audit.txt](data/sim-audit.txt)): 3.3% ever get a false habit claim (10% before the bars rose; earlier run, not archived) and 8.3% a false NEW TELL card (60.7% before gating; earlier run, not archived). 8.3% is still one in twelve: the next bar to raise.
 
-**Evidence. SIMULATION ONLY: bots, not humans.** *Greedy* takes the nearest node; *human* takes its first pick (nearest, mild left bias) 72% of the time; *random* picks uniformly; *reader* avoids the rival's target when the rival would arrive first. No bot has a deliberate Turf, Book or Routine habit; greedy, human and reader start from nearest (the human's left bias is a weak Side habit), so mostly Beeline is exercised. The human bot in learning.mjs has no left bias. 150 matches per cell: about ±8 points at 95%.
+**Evidence (bot simulations).** *Greedy* takes the nearest node; *human* takes its first pick (nearest, mild left bias) 72% of the time; *random* picks uniformly; *reader* avoids the rival's target when the rival would arrive first. No bot has a deliberate Turf, Book or Routine habit; greedy, human and reader start from nearest (the human's left bias is a weak Side habit), so mostly Beeline is exercised. The human bot in learning.mjs has no left bias. 150 matches per cell: about ±8 points at 95%.
 
 Player win rate ([sim-balance.txt](data/sim-balance.txt)):
 

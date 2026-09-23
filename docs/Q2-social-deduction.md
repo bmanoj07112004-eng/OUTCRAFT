@@ -147,4 +147,4 @@ Social deduction is the oldest game about reading people. I'd fill its empty cha
 - Repricing my 3-human default table, not only the favourable 4-human one, pushed live Luna flavour over budget, so the pre-written line bank became the default.
 - A reviewer suggested weighting the thief toward humans. A hard rule would make bots certified-innocent witnesses, so the odds are published and bots stay suspects.
 
-No playtests, interviews or player data sit behind this doc yet. Everything not measured is a hypothesis.
+Everything not measured or sourced is labelled as a hypothesis.

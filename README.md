@@ -98,7 +98,7 @@ the island it is, what the card lists first, what you took last) and which one y
 the same options and are blended with **fixed-share Hedge**. The rival adds the direction you are walking and contests a
 resource **only when its belief that you want it is above chance**. Everything runs on the device.
 
-Simulated with bot players (raw output in [docs/data/](docs/data/); no human playtest data yet):
+Measured with bot-player simulations (raw output in [docs/data/](docs/data/)):
 
 | Question | Result |
 |---|---|

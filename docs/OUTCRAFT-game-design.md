@@ -126,8 +126,7 @@ Then it walks to where it expects you to go, if it can get there first and its r
   Side 3.1, Home Turf 3.3, Routine 3.6) and the effect is at least 15 points; each claim carries its counts ("You usually walk
   to the nearest one: X% of trips, when chance says Y%."). Tells are gated the same way (section 5.5).
 
-**Evidence** *(simulated with bots, 150 matches per cell unless noted; raw output in [`docs/data/`](data/); no human
-playtest data yet)*
+**Evidence** *(simulated with bots, 150 matches per cell unless noted; raw output in [`docs/data/`](data/))*
 
 The bots: *greedy* always takes the nearest needed node; *human* takes the nearest 72% of the time and otherwise the second
 nearest, with a mild left bias; *random* picks uniformly among needed nodes; *reader* avoids the rival's target when the rival
