@@ -21,7 +21,7 @@ strategy. Outsmart the AI, master crafting, earn stars, and climb through increa
 | **Q1** core loop and first session, what brings them back tomorrow | [Q1 writeup §2](docs/Q1-outcraft-writeup.md) |
 | **Q1** progression and metagame (D1 hook built, months-long plan) | [Q1 writeup §3](docs/Q1-outcraft-writeup.md) |
 | **Q1** money without a cash grab | [Q1 writeup §4](docs/Q1-outcraft-writeup.md) and [design doc §10](docs/OUTCRAFT-game-design.md#10-revenue-how-outcraft-makes-money-without-a-cash-grab) |
-| **Q1** AI: how AI built it, and AI inside the game | [Q1 writeup §5](docs/Q1-outcraft-writeup.md) and [how it was made](#about-how-this-was-made-human--ai) |
+| **Q1** AI: how AI built it, and AI inside the game | [Q1 writeup §5](docs/Q1-outcraft-writeup.md) and [About](#about) |
 | **Q1** shipping: first test, kill criteria, soft-launch numbers | [Q1 writeup §6](docs/Q1-outcraft-writeup.md) |
 | **Q1** reference games: pulled apart, borrowed, done differently | [Q1 writeup §7](docs/Q1-outcraft-writeup.md) |
 | **Q2** a mobile F2P genre nobody has cracked, and what it would take | [docs/Q2-social-deduction.md](docs/Q2-social-deduction.md) |
@@ -134,25 +134,28 @@ node tools/experiment.mjs        # try economy / rival settings
 | [`src/main.js`](src/main.js), [`src/storage.js`](src/storage.js), [`src/audio.js`](src/audio.js) | Game flow and UI, local saves and day-1 systems, synthesised sound and music |
 | [`archive/unreadable-v1/`](archive/unreadable-v1/) | The first prototype (a rhythm duel vs a predicting AI), kept as process evidence |
 
-## About: how this was made (human × AI)
+## About
 
 | | |
 |---|---|
+| **Designer** | B Manoj |
 | **Started** | 23 September 2026, 1:07 pm IST |
-| **First prototype** | UNREADABLE, built, tested and red-teamed by about 2:05 pm, then archived |
-| **Pivot to OUTCRAFT** | about 2:05 pm; first playable about 2:30 pm |
-| **Reviews, polish, re-balance, docs** | 2:45 pm onward |
+| **First prototype** | UNREADABLE (a rhythm duel vs a predicting AI), built, tested and dropped the same afternoon; kept in [archive/](archive/unreadable-v1/) |
 | **First public build** | 23 September 2026 |
 
-- **B Manoj (designer):** came up with the core idea (a small-world crafting game: you are handed an item to make, find the
-  resources on the island and craft it), chose to make it a race against an AI rival that learns you, set the direction and
-  the quality bar, made the key calls (dropping the first prototype, the premium polish pass, the About section, the public
-  release), and playtested and gave feedback.
-- **Claude Code (AI, Anthropic):** turned that direction into detailed systems and code (recipes and resource tuning, the
-  rival's learning model and decision rule, the rival ladder, the day-1 hooks, procedural art and audio), plus the bot
-  simulations, tests, research and document drafts, and AI review passes whose findings were fixed.
-- **Checked, not assumed:** 11 automated tests and reproducible simulations. Retention and revenue figures are assumptions
-  to be tested, and every document labels them that way.
+I started with the idea of a small-world crafting game: the player receives an item to build, explores the island to find
+the required resources, and crafts it before an AI rival can do the same.
 
-No trackers, no accounts, no network calls: what the rivals learn about you stays on your device
-(Codex → "Make them forget me").
+I described the core gameplay and the experience I wanted to create. I then worked with AI (Claude Code) to turn that idea
+into the game's systems: the recipes, resource mechanics, rival-learning system, progression and challenges. The AI wrote
+the code, the simulations and the tests.
+
+I kept refining the game by playing it and deciding what to change based on what worked and what didn't: I dropped the
+first prototype, pushed for a premium polish pass, and had the balance tuned with AI-run simulations. I also used AI to
+review the code, find problems and suggest improvements, which were then fixed.
+
+The result is OUTCRAFT: a game built around exploration, resource gathering, crafting, and competing against a rival that
+learns from the way you play. Everything was designed to keep the experience simple, fast and replayable, while making
+every crafting decision feel like a race against your opponent.
+
+**No accounts. No trackers. No unnecessary network features.** The game's core experience runs locally on the device.
