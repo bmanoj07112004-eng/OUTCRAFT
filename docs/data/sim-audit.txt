@@ -1,5 +1,4 @@
 $ node tools/audit.mjs 150 300 15
-$ node tools/audit.mjs 150 300 15
 (1) player win% / snatches per match, 150 matches per cell (same islands as tune.mjs)
 rival    bot      full        contest-only  blind       choices/match
 WREN     greedy   92%/2.2     94%/2.0       94%/2.0     10.5

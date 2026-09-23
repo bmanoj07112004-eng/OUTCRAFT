@@ -3,7 +3,7 @@
 //     steal/deny weights but gives it a uniform belief about you (no habit models, no heading), so
 //     full vs contest-only isolates what learning adds. Same islands and bots as tools/tune.mjs.
 // (2) Honesty over repeated looks: random choosers vs FOX, checked after every match: how many ever get a
-//     NEW TELL card (per-match rule, no significance test) or a dossier habit claim (significance-gated)?
+//     NEW TELL card (z-gated: n >= 8, lift >= 25 points, z >= 2.6) or a dossier habit claim (significance-gated)?
 import { Match } from '../src/match.js';
 import { PlayerModel } from '../src/model.js';
 import { RIVALS } from '../src/data.js';

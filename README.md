@@ -102,7 +102,7 @@ Simulated with bot players (raw output in [docs/data/](docs/data/); no human pla
 
 | Question | Result |
 |---|---|
-| Does it learn you? | Its top guess on a human-like player rises from **65% to 74 to 77%** after the first match (chance ≈ 48%). |
+| Does it learn you? | Its top guess on a human-like player rises from **65% to 73 to 77%** after the first match (chance ≈ 48%). |
 | Does it cheat? | Against a truly random player it stays at chance (48 to 51%). |
 | Is it honest? | Random players get a false habit claim in **3%** of cases and a false Tell in **8%**, even when checked after every one of 15 matches. |
 | Is the difficulty curve right? | A human-like player wins **100% / 90% / 66% / 59% / 39%** against PIP / WREN / FOX / RAVEN / MIMIC. |
