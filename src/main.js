@@ -392,6 +392,8 @@ function tutorialPointer(now) {
 }
 
 function tick() {
+  // Re-layout whenever the window size changed, even if no resize event arrived (hidden tabs, webviews).
+  if (R.W !== window.innerWidth || R.H !== window.innerHeight) R.resize();
   const now = clock();
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;

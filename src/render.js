@@ -33,7 +33,12 @@ function hexA(hex, a) {
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
 function rr(g, x, y, w, h, r) {
-  r = Math.min(r, w / 2, h / 2);
+  // Tiny or negative boxes (very small windows) draw nothing instead of throwing.
+  if (!(w > 0 && h > 0)) {
+    g.beginPath();
+    return;
+  }
+  r = Math.max(0, Math.min(r, w / 2, h / 2));
   g.beginPath();
   g.moveTo(x + r, y);
   g.arcTo(x + w, y, x + w, y + h, r);
@@ -1349,7 +1354,7 @@ export class Renderer {
     const ing = 19;
     const widths = slots.map((s) => 30 + s.items.length * (ing + 3) + 8);
     const total = widths.reduce((a, b) => a + b, 0) + (slots.length - 1) * 6;
-    const k = Math.min(1, avail / total);
+    const k = Math.max(0.35, Math.min(1, avail / total));
     let cx = x + 86;
     const cy = y + 34;
     this.cardSlots = [];
