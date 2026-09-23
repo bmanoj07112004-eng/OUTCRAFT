@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#07070d" />
+    <meta name="description" content="UNREADABLE: an arcade mind-game against an AI that learns your habits. Every beat it guesses where you'll be. Don't be predictable." />
+    <meta property="og:title" content="UNREADABLE" />
+    <meta property="og:description" content="An AI that learns your habits. Every beat it guesses where you'll be. Don't be predictable." />
+    <title>UNREADABLE · the game that learns you</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' fill='%2307070d'/%3E%3Cellipse cx='32' cy='32' rx='26' ry='18' fill='none' stroke='%239d8cff' stroke-width='4'/%3E%3Ccircle cx='32' cy='32' r='9' fill='%239d8cff'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="game" aria-label="UNREADABLE game canvas"></canvas>
+
+    <section id="screen-title" class="screen">
+      <div class="panel title-panel">
+        <h1 class="logo">UNREADABLE</h1>
+        <p class="tag">An AI that learns your habits.<br />Every beat it guesses where you'll be. <b>Don't be predictable.</b></p>
+        <div id="dossier" class="dossier" hidden></div>
+        <button id="btn-play" class="btn primary">PLAY</button>
+        <button id="btn-daily" class="btn daily">
+          <span class="daily-main">DAILY ORACLE <span id="daily-num"></span></span>
+          <span id="daily-sub" class="daily-sub"></span>
+        </button>
+        <div class="row">
+          <button id="btn-tells" class="btn ghost">TELLS <span id="tells-count" class="pill"></span></button>
+          <button id="btn-how" class="btn ghost">HOW TO PLAY</button>
+        </div>
+        <div class="foot">
+          <button id="btn-sound" class="link">Sound: on</button>
+          <span>·</span>
+          <a id="link-doc" class="link" href="#" target="_blank" rel="noopener">Design doc</a>
+          <span>·</span>
+          <span class="muted">Lila Games design test prototype</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-how" class="screen" hidden>
+      <div class="panel">
+        <h2>HOW TO PLAY</h2>
+        <ol class="rules">
+          <li>Every beat, the <b>Eye</b> secretly picks the lane it thinks you'll be in.</li>
+          <li>When the line reaches you, it <b class="c-read">strikes</b>. Be somewhere else.</li>
+          <li>Every <b class="c-dodge">dodge</b> pushes the <b>Mind Bar</b> toward <b>CRACK ▶</b>. Getting <b class="c-read">READ</b> pushes it back.</li>
+          <li>Gold <b class="c-shard">shards</b> push harder. The Eye knows you want them.</li>
+        </ol>
+        <p class="fine">It only knows your <b>past</b>, never your present. It learns every beat, and it will remember you tomorrow.</p>
+        <div class="controls"><span class="key">Tap a lane</span><span class="key">A S D</span><span class="key">← →</span><span class="key">P = pause</span></div>
+        <button id="btn-how-ok" class="btn primary">GOT IT</button>
+      </div>
+    </section>
+
+    <section id="screen-results" class="screen" hidden>
+      <div class="panel scroll">
+        <div id="res-title" class="res-title">SOLVED</div>
+        <div id="res-sub" class="res-sub"></div>
+        <div class="res-score"><span id="res-score">0</span><span id="res-best" class="pill best" hidden>NEW BEST</span></div>
+        <div id="res-pips" class="pips"></div>
+        <div id="res-read" class="res-read"></div>
+        <div id="res-stats" class="res-stats"></div>
+        <div id="res-tells" class="res-tells"></div>
+        <blockquote id="res-quote" class="quote"></blockquote>
+        <div id="res-daily" class="res-daily" hidden></div>
+        <div class="row">
+          <button id="btn-again" class="btn primary">PLAY AGAIN</button>
+          <button id="btn-share" class="btn">SHARE</button>
+        </div>
+        <div class="row">
+          <button id="btn-res-tells" class="btn ghost">TELLS</button>
+          <button id="btn-menu" class="btn ghost">MENU</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-tells" class="screen" hidden>
+      <div class="panel scroll">
+        <h2>YOUR TELLS</h2>
+        <p class="fine">Habits the Oracle has caught you in. <b>Detect</b> them by getting read, then <b>break</b> them: play a run where the Oracle can no longer read that habit.</p>
+        <div id="tells-grid" class="tells-grid"></div>
+        <h3>HOW READABLE YOU ARE</h3>
+        <div id="trend" class="trend"></div>
+        <div id="tells-meta" class="fine"></div>
+        <div class="row">
+          <button id="btn-tells-back" class="btn primary">BACK</button>
+          <button id="btn-forget" class="btn ghost danger">MAKE IT FORGET ME</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-pause" class="screen" hidden>
+      <div class="panel">
+        <h2>PAUSED</h2>
+        <p class="fine">The Oracle is waiting. It's patient.</p>
+        <button id="btn-resume" class="btn primary">RESUME</button>
+        <button id="btn-quit" class="btn ghost">QUIT RUN</button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast" hidden></div>
+
+    <noscript><p style="color:#fff;padding:2rem">UNREADABLE needs JavaScript.</p></noscript>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "outcraft",
+  "version": "1.0.0",
+  "description": "OUTCRAFT - a pocket-island crafting race against an AI rival that learns how you move. Lila Games design test prototype.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "sim": "node tools/sim.mjs",
+    "test": "node tools/test.mjs",
+    "serve": "node tools/serve.mjs 8080"
+  },
+  "license": "MIT"
+}

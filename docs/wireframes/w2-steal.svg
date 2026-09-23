@@ -1,0 +1,222 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 760 900" width="760" height="900" role="img" aria-labelledby="w2-title w2-desc">
+  <title id="w2-title">ECHOES wireframe 2: The Steal</title>
+  <desc id="w2-desc">Portrait phone wireframe of the paused Steal screen after beating RAVI_07's Echo. It shows the Echo's build strip with one excluded card greyed, three cards (the starred signature Chain Lightning enlarged after a first tap with a LOCKED FOR YOU badge and a STEAL button, Cold Core with an EVO PAIR badge and its recipe, Blade Fan with an UPGRADE badge), a Heal Instead option, and the slot picker used when the slot type is full. Numbered callouts are explained in the legend on the right.</desc>
+  <defs>
+    <style>
+      text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+      .b { font-weight: 700; }
+      .sb { font-weight: 600; }
+      .co circle { fill: #111114; stroke: #ffffff; stroke-width: 2; }
+      .co text { fill: #ffffff; font-size: 11px; font-weight: 700; text-anchor: middle; }
+      .lg { font-size: 11.5px; fill: #2a2a2e; }
+      .ln circle { fill: #111114; }
+      .ln text { fill: #ffffff; font-size: 11px; font-weight: 700; text-anchor: middle; }
+      .ph { fill: #e4e4e8; stroke: #c4c4cb; stroke-width: 1.2; }
+      .phx { stroke: #c4c4cb; stroke-width: 1.2; }
+      .mi { fill: #d5d5da; }
+      .lv { font-size: 11px; font-weight: 700; fill: #3a3a40; text-anchor: end; }
+      .tl { font-size: 11.5px; fill: #3a3a40; }
+      .tv { font-size: 11.5px; font-weight: 700; fill: #111114; text-anchor: end; }
+    </style>
+    <clipPath id="w2-screen"><rect x="0" y="0" width="390" height="844" rx="42"/></clipPath>
+    <pattern id="w2-grid" width="26" height="26" patternUnits="userSpaceOnUse">
+      <path d="M26 0H0V26" fill="none" stroke="#dcdce1" stroke-width="1"/>
+    </pattern>
+    <g id="mob">
+      <circle cx="0" cy="-5" r="4"/>
+      <path d="M-6 7C-6 1-3.5-2 0-2S6 1 6 7Z"/>
+    </g>
+  </defs>
+
+  <!-- canvas -->
+  <rect x="0" y="0" width="760" height="900" fill="#f3f3f5"/>
+
+  <!-- device frame -->
+  <rect x="6" y="170" width="4" height="56" rx="2" fill="#2a2a2d"/>
+  <rect x="6" y="240" width="4" height="56" rx="2" fill="#2a2a2d"/>
+  <rect x="428" y="210" width="4" height="84" rx="2" fill="#2a2a2d"/>
+  <rect x="10" y="14" width="418" height="872" rx="56" fill="#1d1d1f"/>
+  <rect x="13" y="17" width="412" height="866" rx="53" fill="none" stroke="#3a3a3e" stroke-width="1.5"/>
+
+  <!-- ============ PHONE SCREEN ============ -->
+  <g transform="translate(24 28)">
+    <g clip-path="url(#w2-screen)">
+      <!-- frozen run behind the sheet -->
+      <rect x="0" y="0" width="390" height="844" fill="#e9e9ec"/>
+      <rect x="0" y="0" width="390" height="844" fill="url(#w2-grid)"/>
+      <g fill="#9b9ba3">
+        <use xlink:href="#mob" x="40" y="220"/><use xlink:href="#mob" x="120" y="260"/><use xlink:href="#mob" x="300" y="240"/>
+        <use xlink:href="#mob" x="60" y="480"/><use xlink:href="#mob" x="330" y="520"/><use xlink:href="#mob" x="200" y="700"/>
+      </g>
+      <rect x="0" y="0" width="390" height="844" fill="#f6f6f8" fill-opacity="0.93"/>
+
+      <!-- status bar -->
+      <text x="36" y="30" font-size="14" class="sb" fill="#1a1a1a">9:41</text>
+      <rect x="128" y="10" width="134" height="28" rx="14" fill="#1d1d1f"/>
+      <rect x="308" y="22" width="3" height="6" rx="1" fill="#1a1a1a"/>
+      <rect x="313" y="19" width="3" height="9" rx="1" fill="#1a1a1a"/>
+      <rect x="318" y="16" width="3" height="12" rx="1" fill="#1a1a1a"/>
+      <rect x="330" y="16" width="24" height="12" rx="3" fill="none" stroke="#1a1a1a" stroke-width="1.2"/>
+      <rect x="332" y="18" width="16" height="8" rx="1.5" fill="#1a1a1a"/>
+
+      <!-- paused strip -->
+      <rect x="18" y="56" width="3.5" height="14" rx="1" fill="#77777f"/>
+      <rect x="24.5" y="56" width="3.5" height="14" rx="1" fill="#77777f"/>
+      <text x="36" y="69" font-size="14" class="b" fill="#77777f">07:04</text>
+      <rect x="196" y="52" width="178" height="24" rx="12" fill="#ffffff" stroke="#b9b9c1"/>
+      <text x="285" y="68" font-size="11" class="b" fill="#3a3a40" text-anchor="middle">PAUSED · NO CHOICE TIMER</text>
+
+      <!-- title -->
+      <text x="195" y="108" font-size="21" class="b" fill="#111114" text-anchor="middle">STEAL FROM RAVI_07'S ECHO</text>
+      <text x="195" y="128" font-size="12" fill="#55555c" text-anchor="middle">Take 1 card for this run. <tspan class="b">+10 Tribute</tspan> for the win.</text>
+
+      <!-- defeated Echo: name + build strip (actives | passives) -->
+      <rect x="16" y="140" width="358" height="56" rx="12" fill="#ffffff" stroke="#dcdce0"/>
+      <circle cx="40" cy="168" r="14" fill="#d5d5da" stroke="#9b9ba3"/>
+      <circle cx="40" cy="164" r="5" fill="#9b9ba3"/>
+      <path d="M31 177C32 171 36 170 40 170S48 171 49 177Z" fill="#9b9ba3"/>
+      <text x="62" y="164" font-size="12" class="b" fill="#1a1a1a">RAVI_07</text>
+      <text x="62" y="180" font-size="11" fill="#6b6b73">Echo build</text>
+      <rect class="mi" x="150" y="155" width="26" height="26" rx="6"/>
+      <text x="154" y="167" font-size="11" fill="#111114">★</text>
+      <text class="lv" x="173" y="178">5</text>
+      <rect x="180" y="155" width="26" height="26" rx="6" fill="#f1f1f3" stroke="#b9b9c1" stroke-dasharray="3 2"/>
+      <text class="lv" x="203" y="178" style="fill:#a3a3ab">5</text>
+      <rect class="mi" x="210" y="155" width="26" height="26" rx="6"/>
+      <text class="lv" x="233" y="178">4</text>
+      <line x1="245" y1="155" x2="245" y2="181" stroke="#dcdce0"/>
+      <rect class="mi" x="254" y="155" width="26" height="26" rx="6"/>
+      <text class="lv" x="277" y="178">4</text>
+      <rect class="mi" x="284" y="155" width="26" height="26" rx="6"/>
+      <text class="lv" x="307" y="178">2</text>
+      <rect class="mi" x="314" y="155" width="26" height="26" rx="6"/>
+      <text class="lv" x="337" y="178">2</text>
+
+      <!-- CARD 1: signature, enlarged after the first tap -->
+      <rect x="16" y="208" width="358" height="212" rx="14" fill="#ffffff" stroke="#7c5cff" stroke-width="2.5"/>
+      <rect class="ph" x="30" y="222" width="56" height="56" rx="12"/>
+      <line class="phx" x1="38" y1="230" x2="78" y2="270"/>
+      <line class="phx" x1="78" y1="230" x2="38" y2="270"/>
+      <circle cx="84" cy="224" r="11" fill="#111114"/>
+      <text x="84" y="228.5" font-size="12" fill="#ffffff" text-anchor="middle">★</text>
+      <text x="100" y="240" font-size="17" class="b" fill="#111114">Chain Lightning</text>
+      <text x="100" y="258" font-size="11" class="b" fill="#6b6b73" letter-spacing="0.5">ACTIVE · ★ SIGNATURE</text>
+      <text x="100" y="280" font-size="13" fill="#2a2a2e">Echo Lv 5 · yours <tspan class="b">Lv 3</tspan> (new)</text>
+      <rect x="30" y="294" width="118" height="22" rx="11" fill="#2b2b30"/>
+      <text x="89" y="309" font-size="11" class="b" fill="#ffffff" text-anchor="middle">LOCKED FOR YOU</text>
+      <text x="158" y="309" font-size="11" fill="#55555c">You earn it at Chapter 9</text>
+      <line x1="30" y1="328" x2="360" y2="328" stroke="#ececef"/>
+      <text x="30" y="347" font-size="12" fill="#3a3a40">Lightning jumps between nearby enemies.</text>
+      <text x="30" y="365" font-size="12" fill="#3a3a40">Your build: Actives 5/6 → <tspan class="b">6/6</tspan></text>
+      <rect x="30" y="374" width="330" height="34" rx="10" fill="#7c5cff"/>
+      <text x="195" y="396" font-size="14" class="b" fill="#ffffff" text-anchor="middle" letter-spacing="1">STEAL</text>
+
+      <!-- CARD 2: passive, pairs with the host's Frost Orb -->
+      <rect x="16" y="432" width="358" height="100" rx="14" fill="#ffffff" stroke="#cfcfd5" stroke-width="1.5"/>
+      <rect class="ph" x="30" y="446" width="44" height="44" rx="10"/>
+      <line class="phx" x1="36" y1="452" x2="68" y2="484"/>
+      <line class="phx" x1="68" y1="452" x2="36" y2="484"/>
+      <text x="86" y="462" font-size="15" class="b" fill="#111114">Cold Core</text>
+      <text x="360" y="462" font-size="11" class="b" fill="#6b6b73" text-anchor="end" letter-spacing="0.5">PASSIVE</text>
+      <text x="86" y="480" font-size="12" fill="#2a2a2e">Echo Lv 4 · yours <tspan class="b">Lv 2</tspan> (new)</text>
+      <rect x="86" y="488" width="76" height="20" rx="10" fill="#ffffff" stroke="#2b2b30" stroke-width="1.2"/>
+      <text x="124" y="502" font-size="11" class="b" fill="#2b2b30" text-anchor="middle">EVO PAIR</text>
+      <text x="86" y="523" font-size="11" fill="#55555c">✓ Frost Orb + Cold Core → Blizzard Heart</text>
+
+      <!-- CARD 3: owned active, upgrade in place -->
+      <rect x="16" y="544" width="358" height="100" rx="14" fill="#ffffff" stroke="#cfcfd5" stroke-width="1.5"/>
+      <rect class="ph" x="30" y="558" width="44" height="44" rx="10"/>
+      <line class="phx" x1="36" y1="564" x2="68" y2="596"/>
+      <line class="phx" x1="68" y1="564" x2="36" y2="596"/>
+      <text x="86" y="574" font-size="15" class="b" fill="#111114">Blade Fan</text>
+      <text x="360" y="574" font-size="11" class="b" fill="#6b6b73" text-anchor="end" letter-spacing="0.5">ACTIVE</text>
+      <text x="86" y="592" font-size="12" fill="#2a2a2e">Echo Lv 4 · yours Lv 2 → <tspan class="b">3</tspan></text>
+      <rect x="86" y="600" width="76" height="20" rx="10" fill="#ffffff" stroke="#2b2b30" stroke-width="1.2"/>
+      <text x="124" y="614" font-size="11" class="b" fill="#2b2b30" text-anchor="middle">UPGRADE</text>
+      <text x="86" y="635" font-size="11" fill="#55555c">Upgrades your copy. No slot needed.</text>
+
+      <!-- alternative: heal -->
+      <rect x="16" y="656" width="358" height="44" rx="10" fill="#ffffff" stroke="#7c5cff" stroke-width="1.5"/>
+      <text x="32" y="683" font-size="13" class="b" fill="#7c5cff">HEAL INSTEAD</text>
+      <text x="358" y="683" font-size="12" fill="#55555c" text-anchor="end">+30% max HP · tap, then CONFIRM</text>
+
+      <!-- slot-full state (UI step 5) -->
+      <rect x="16" y="712" width="358" height="102" rx="12" fill="#fafafb" stroke="#9b9ba3" stroke-dasharray="5 4"/>
+      <text x="28" y="731" font-size="11" class="b" fill="#3a3a40" letter-spacing="0.4">STEP 5 · IF THE SLOT TYPE IS FULL</text>
+      <text x="28" y="746" font-size="11" fill="#55555c">Passives 6/6: tap the card Cold Core replaces</text>
+      <rect class="mi" x="28" y="756" width="36" height="26" rx="6"/><text class="lv" x="60" y="776">3</text>
+      <rect class="mi" x="70" y="756" width="36" height="26" rx="6"/><text class="lv" x="102" y="776">2</text>
+      <rect class="mi" x="112" y="756" width="36" height="26" rx="6"/><text class="lv" x="144" y="776">4</text>
+      <rect x="154" y="756" width="36" height="26" rx="6" fill="#ececef" stroke="#111114" stroke-width="2"/>
+      <text class="lv" x="186" y="776">2</text>
+      <rect class="mi" x="196" y="756" width="36" height="26" rx="6"/><text class="lv" x="228" y="776">1</text>
+      <rect class="mi" x="238" y="756" width="36" height="26" rx="6"/><text class="lv" x="270" y="776">3</text>
+      <rect x="132" y="786" width="80" height="20" rx="10" fill="#2b2b30"/>
+      <text x="172" y="800" font-size="11" class="b" fill="#ffffff" text-anchor="middle">DISCARD</text>
+      <rect x="290" y="756" width="72" height="30" rx="8" fill="#ffffff" stroke="#7c5cff" stroke-width="1.5"/>
+      <text x="326" y="776" font-size="12" class="b" fill="#7c5cff" text-anchor="middle">BACK</text>
+
+      <!-- home indicator -->
+      <rect x="128" y="824" width="134" height="5" rx="2.5" fill="#1d1d1f"/>
+    </g>
+  </g>
+
+  <!-- callouts on the phone (global coordinates) -->
+  <g class="co"><circle cx="208" cy="92" r="10"/><text x="208" y="96">1</text></g>
+  <g class="co"><circle cx="46" cy="127" r="10"/><text x="46" y="131">2</text></g>
+  <g class="co"><circle cx="398" cy="168" r="10"/><text x="398" y="172">3</text></g>
+  <g class="co"><circle cx="40" cy="238" r="10"/><text x="40" y="242">4</text></g>
+  <g class="co"><circle cx="398" cy="304" r="10"/><text x="398" y="308">5</text></g>
+  <g class="co"><circle cx="46" cy="333" r="10"/><text x="46" y="337">6</text></g>
+  <g class="co"><circle cx="398" cy="419" r="10"/><text x="398" y="423">7</text></g>
+  <g class="co"><circle cx="398" cy="460" r="10"/><text x="398" y="464">8</text></g>
+  <g class="co"><circle cx="398" cy="706" r="10"/><text x="398" y="710">9</text></g>
+  <g class="co"><circle cx="398" cy="744" r="10"/><text x="398" y="748">10</text></g>
+
+  <!-- ============ LEGEND PANEL ============ -->
+  <rect x="446" y="28" width="300" height="844" rx="14" fill="#ffffff" stroke="#dcdce0"/>
+  <text x="464" y="58" font-size="16" class="b" fill="#111114">W2 · The Steal</text>
+  <text x="464" y="77" font-size="11" fill="#6b6b73">Spec §5 (fully detailed) · UI steps 3–5</text>
+
+  <g class="ln"><circle cx="474" cy="100" r="8.5"/><text x="474" y="104">1</text></g>
+  <text class="lg"><tspan x="490" y="104">Game paused; no choice timer. A timer</tspan><tspan x="490" y="118.5">punishes a player whose phone buzzed.</tspan></text>
+  <g class="ln"><circle cx="474" cy="134" r="8.5"/><text x="474" y="138">2</text></g>
+  <text class="lg"><tspan x="490" y="138">Opens when the Echo Core reaches you.</tspan><tspan x="490" y="152.5">Winning pays you 10 Tribute either way.</tspan></text>
+  <g class="ln"><circle cx="474" cy="168" r="8.5"/><text x="474" y="172">3</text></g>
+  <text class="lg"><tspan x="490" y="172">Echo build. Grey = excluded (your Orbit</tspan><tspan x="490" y="186.5">Saw is already max level).</tspan></text>
+  <g class="ln"><circle cx="474" cy="202" r="8.5"/><text x="474" y="206">4</text></g>
+  <text class="lg"><tspan x="490" y="206">★ Signature: best active you can take,</tspan><tspan x="490" y="220.5">shown on the telegraph. Cards start</tspan><tspan x="490" y="235">equal; this one was tapped once.</tspan></text>
+  <g class="ln"><circle cx="474" cy="250.5" r="8.5"/><text x="474" y="254.5">5</text></g>
+  <text class="lg"><tspan x="490" y="254.5">Level lines, τ = 0.6. New card:</tspan><tspan x="490" y="269">floor(Echo Lv × 0.6), max Lv 3. Owned:</tspan><tspan x="490" y="283.5">+max(1, floor(gap × 0.6)), max Lv 5.</tspan></text>
+  <g class="ln"><circle cx="474" cy="299" r="8.5"/><text x="474" y="303">6</text></g>
+  <text class="lg"><tspan x="490" y="303">Badges: LOCKED FOR YOU (not yet earned</tspan><tspan x="490" y="317.5">on your account), EVO PAIR (you own the</tspan><tspan x="490" y="332">partner), UPGRADE (you own the card).</tspan></text>
+  <g class="ln"><circle cx="474" cy="347.5" r="8.5"/><text x="474" y="351.5">7</text></g>
+  <text class="lg"><tspan x="490" y="351.5">STEAL is the second tap (mis-tap guard).</tspan><tspan x="490" y="366">Toast "Stolen: Chain Lightning Lv 3",</tspan><tspan x="490" y="380.5">then resume with 1.0 s invulnerability.</tspan></text>
+  <g class="ln"><circle cx="474" cy="396" r="8.5"/><text x="474" y="400">8</text></g>
+  <text class="lg"><tspan x="490" y="400">At least one passive when one qualifies:</tspan><tspan x="490" y="414.5">power now vs recipe later.</tspan></text>
+  <g class="ln"><circle cx="474" cy="430" r="8.5"/><text x="474" y="434">9</text></g>
+  <text class="lg"><tspan x="490" y="434">Always available: heal 30% of max HP.</tspan><tspan x="490" y="448.5">The right call at low HP.</tspan></text>
+  <g class="ln"><circle cx="474" cy="464" r="8.5"/><text x="474" y="468">10</text></g>
+  <text class="lg"><tspan x="490" y="468">Slot full: tap a card, then DISCARD to</tspan><tspan x="490" y="482.5">confirm (warns if it breaks a recipe; no</tspan><tspan x="490" y="497">refund). BACK returns to the offer.</tspan></text>
+
+  <!-- rules with no on-screen element -->
+  <line x1="464" y1="512" x2="728" y2="512" stroke="#e4e4e8"/>
+  <text x="464" y="532" font-size="11" class="b" fill="#3a3a40" letter-spacing="0.6">RULES NOT ON SCREEN</text>
+  <text class="lg"><tspan x="468" y="552">•</tspan><tspan x="480" y="552">Offer fixed when the invasion starts</tspan><tspan x="480" y="566.5">(seed + build snapshot); no reroll.</tspan></text>
+  <text class="lg"><tspan x="468" y="586">•</tspan><tspan x="480" y="586">The stolen card and its evo partner join</tspan><tspan x="480" y="600.5">your level-up pool for this run.</tspan></text>
+  <text class="lg"><tspan x="468" y="620">•</tspan><tspan x="480" y="620">1–2 valid cards: shown with the heal.</tspan><tspan x="480" y="634.5">None valid: screen skipped, 30% heal.</tspan></text>
+  <text class="lg"><tspan x="468" y="654">•</tspan><tspan x="480" y="654">The owner earns 10 Tribute either way.</tspan></text>
+  <text class="lg"><tspan x="468" y="673.5">•</tspan><tspan x="480" y="673.5">One steal per run at launch.</tspan></text>
+
+  <!-- tuning -->
+  <line x1="464" y1="688" x2="728" y2="688" stroke="#e4e4e8"/>
+  <text x="464" y="708" font-size="11" class="b" fill="#3a3a40" letter-spacing="0.6">TUNING · §5.6 STARTING ASSUMPTIONS</text>
+  <text class="tl" x="468" y="727">Offer size · transfer ratio τ</text><text class="tv" x="726" y="727">3 · 0.6</text>
+  <text class="tl" x="468" y="743">Level cap, new card</text><text class="tv" x="726" y="743">Lv 3</text>
+  <text class="tl" x="468" y="759">Card weights (§5.3)</text><text class="tv" x="726" y="759">4 +4 +3 +2</text>
+  <text class="tl" x="468" y="775">Heal instead</text><text class="tv" x="726" y="775">30% max HP</text>
+  <text class="tl" x="468" y="791">Post-steal invulnerability</text><text class="tv" x="726" y="791">1.0 s</text>
+  <text class="tl" x="468" y="807">Target steal take rate (§5.9)</text><text class="tv" x="726" y="807">≥ 80%</text>
+  <text class="tl" x="468" y="823">Target median decision (§5.9)</text><text class="tv" x="726" y="823">4–12 s</text>
+  <text x="464" y="858" font-size="11" fill="#8a8a93">Skill names are hypothetical.</text>
+</svg>

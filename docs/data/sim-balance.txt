@@ -1,0 +1,9 @@
+$ node tools/sim.mjs 150   (win% · sn = snatches per match · or = times you got there first · fo = fake-outs · match seconds)
+matches per cell: 150 (each bot keeps one remembering PlayerModel across its matches)
+
+rival    greedy                    human                     random                    reader                    
+PIP       99% win 1.5sn 2.3or 0.0fo 47s  100% win 1.3sn 2.0or 0.0fo 48s   93% win 1.3sn 1.3or 0.0fo 55s   99% win 0.9sn 2.1or 0.0fo 47s  
+WREN      91% win 2.3sn 2.7or 0.2fo 55s   90% win 2.0sn 2.1or 0.3fo 57s   69% win 1.8sn 1.8or 0.3fo 61s   92% win 1.6sn 2.6or 0.1fo 55s  
+FOX       85% win 3.1sn 2.8or 0.3fo 63s   66% win 2.5sn 2.4or 0.4fo 65s   47% win 2.1sn 1.6or 0.6fo 67s   81% win 2.3sn 2.9or 0.4fo 64s  
+RAVEN     61% win 4.1sn 3.4or 0.5fo 68s   59% win 3.0sn 2.8or 0.9fo 69s   37% win 2.3sn 1.5or 0.8fo 68s   68% win 2.5sn 3.1or 0.7fo 68s  
+MIMIC     47% win 4.7sn 3.8or 0.6fo 70s   39% win 3.4sn 3.0or 0.9fo 70s   18% win 3.1sn 2.0or 1.1fo 69s   43% win 3.2sn 3.5or 0.8fo 69s  

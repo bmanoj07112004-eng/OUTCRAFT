@@ -1,0 +1,7 @@
+$ node tools/learning.mjs 50 6   (rival = RAVEN; accuracy of its top guess vs uniform chance)
+beeliner  rival's top-guess accuracy, match 1..6: 82%  91%  90%  91%  91%  90%
+          uniform-guess chance:                  47%  49%  48%  49%  49%  49%
+human     rival's top-guess accuracy, match 1..6: 65%  74%  73%  77%  74%  74%
+          uniform-guess chance:                  46%  48%  48%  49%  49%  49%
+random    rival's top-guess accuracy, match 1..6: 48%  51%  49%  49%  49%  48%
+          uniform-guess chance:                  48%  51%  49%  50%  49%  49%

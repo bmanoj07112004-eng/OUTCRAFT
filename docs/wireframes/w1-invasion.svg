@@ -1,0 +1,238 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 760 930" width="760" height="930" role="img" aria-labelledby="w1-title w1-desc">
+  <title id="w1-title">ECHOES wireframe 1: invasion telegraph and Echo duel HUD</title>
+  <desc id="w1-desc">Portrait phone wireframe of the Echo duel at 06:55 of a 15-minute open stage. A duel bar under the top HUD shows a 60 second ring timer at 0:41, the Echo's HP at 55%, a TOUGH label and two tell chips (orbits clockwise, keeps its distance). On the playfield the Echo glows as it commits to a dive toward the host, its clockwise orbit is drawn as a dashed arc, and a 0.6 second Chain Lightning mark rings the host. Inset A shows the paused telegraph card with the tell, the three skills the Echo fights with, the three-card prize and a READY button. Inset C shows the off-screen edge arrow. Numbered callouts are explained in the legend on the right.</desc>
+  <defs>
+    <style>
+      text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+      .b { font-weight: 700; }
+      .sb { font-weight: 600; }
+      .co circle { fill: #111114; stroke: #ffffff; stroke-width: 2; }
+      .co text { fill: #ffffff; font-size: 11px; font-weight: 700; text-anchor: middle; }
+      .lg { font-size: 11.5px; fill: #2a2a2e; }
+      .ln circle { fill: #111114; }
+      .ln text { fill: #ffffff; font-size: 11px; font-weight: 700; text-anchor: middle; }
+      .ic { fill: #d5d5da; }
+      .lv { font-size: 11px; font-weight: 700; fill: #3a3a40; text-anchor: end; }
+      .kl { font-size: 9.5px; font-weight: 700; fill: #8a8a93; letter-spacing: 0.6px; }
+      .pz { font-size: 11px; fill: #ffffff; }
+      .pl { font-size: 11px; font-weight: 700; fill: #ffffff; text-anchor: end; }
+    </style>
+    <clipPath id="w1-screen"><rect x="0" y="0" width="390" height="844" rx="42"/></clipPath>
+    <pattern id="w1-grid" width="26" height="26" patternUnits="userSpaceOnUse">
+      <path d="M26 0H0V26" fill="none" stroke="#dcdce1" stroke-width="1"/>
+    </pattern>
+    <g id="mob">
+      <circle cx="0" cy="-5" r="4"/>
+      <path d="M-6 7C-6 1-3.5-2 0-2S6 1 6 7Z"/>
+    </g>
+  </defs>
+
+  <!-- canvas -->
+  <rect x="0" y="0" width="760" height="930" fill="#f3f3f5"/>
+
+  <!-- device frame -->
+  <rect x="6" y="170" width="4" height="56" rx="2" fill="#2a2a2d"/>
+  <rect x="6" y="240" width="4" height="56" rx="2" fill="#2a2a2d"/>
+  <rect x="428" y="210" width="4" height="84" rx="2" fill="#2a2a2d"/>
+  <rect x="10" y="14" width="418" height="872" rx="56" fill="#1d1d1f"/>
+  <rect x="13" y="17" width="412" height="866" rx="53" fill="none" stroke="#3a3a3e" stroke-width="1.5"/>
+
+  <!-- ============ PHONE SCREEN (state B: the duel) ============ -->
+  <g transform="translate(24 28)">
+    <g clip-path="url(#w1-screen)">
+      <!-- playfield -->
+      <rect x="0" y="0" width="390" height="844" fill="#e9e9ec"/>
+      <rect x="0" y="0" width="390" height="844" fill="url(#w1-grid)"/>
+
+      <!-- horde thinned to 50% -->
+      <g fill="#a7a7ae">
+        <use xlink:href="#mob" x="40" y="250"/><use xlink:href="#mob" x="120" y="236"/><use xlink:href="#mob" x="336" y="250"/>
+        <use xlink:href="#mob" x="60" y="300"/><use xlink:href="#mob" x="152" y="300"/><use xlink:href="#mob" x="248" y="262"/>
+        <use xlink:href="#mob" x="30" y="420"/><use xlink:href="#mob" x="70" y="470"/><use xlink:href="#mob" x="360" y="520"/>
+        <use xlink:href="#mob" x="340" y="580"/><use xlink:href="#mob" x="40" y="600"/><use xlink:href="#mob" x="96" y="648"/>
+        <use xlink:href="#mob" x="312" y="648"/><use xlink:href="#mob" x="120" y="430"/>
+      </g>
+
+      <!-- Echo's clockwise orbit around the host -->
+      <path d="M99.5 374.6A191 191 0 0 1 374.5 474.7" fill="none" stroke="#ff4d6d" stroke-opacity="0.6" stroke-width="1.8" stroke-dasharray="6 5"/>
+      <path d="M377.9 484.1L379.2 473L369.8 476.4Z" fill="#ff4d6d" fill-opacity="0.8"/>
+
+      <!-- host with orbiting saws and the Chain Lightning mark -->
+      <circle cx="195" cy="540" r="56" fill="none" stroke="#b9b9c1" stroke-width="1.5" stroke-dasharray="4 5"/>
+      <circle cx="251" cy="540" r="6" fill="#6b6b73"/>
+      <circle cx="167" cy="588.5" r="6" fill="#6b6b73"/>
+      <circle cx="167" cy="491.5" r="6" fill="#6b6b73"/>
+      <circle cx="195" cy="540" r="24" fill="#ff4d6d" fill-opacity="0.08" stroke="#ff4d6d" stroke-width="2" stroke-dasharray="3 3"/>
+      <circle cx="195" cy="540" r="13" fill="#2b2b30"/>
+      <circle cx="200" cy="536" r="3" fill="#ffffff"/>
+      <text x="206" y="578" font-size="10.5" class="b" fill="#ff4d6d">0.6 s</text>
+
+      <!-- the Echo committing: glow, then a dive toward the host -->
+      <circle cx="300" cy="380" r="30" fill="#ff4d6d" fill-opacity="0.22"/>
+      <circle cx="300" cy="380" r="21" fill="none" stroke="#ff4d6d" stroke-width="1.5" stroke-dasharray="3 3"/>
+      <circle cx="300" cy="380" r="12" fill="#ffffff" stroke="#ff4d6d" stroke-width="3"/>
+      <circle cx="296" cy="377" r="2.5" fill="#ff4d6d"/>
+      <path d="M286 401L248 459" stroke="#ff4d6d" stroke-width="2.5" stroke-dasharray="5 4"/>
+      <path d="M242.4 467.8L252 462.1L243.6 456.7Z" fill="#ff4d6d"/>
+      <rect x="268" y="336" width="64" height="18" rx="9" fill="#ffffff" stroke="#ff4d6d" stroke-width="1.5"/>
+      <text x="300" y="349" font-size="11" class="b" fill="#1a1a1a" text-anchor="middle">RAVI_07</text>
+
+      <!-- joystick: thumb pushing against the orbit -->
+      <circle cx="195" cy="670" r="42" fill="#ffffff" fill-opacity="0.35" stroke="#b9b9c1" stroke-width="1.5"/>
+      <circle cx="178" cy="656" r="17" fill="#c4c4cb"/>
+
+      <!-- top HUD -->
+      <rect x="0" y="0" width="390" height="136" fill="#ffffff" fill-opacity="0.96"/>
+      <line x1="0" y1="136" x2="390" y2="136" stroke="#d4d4d8" stroke-width="1"/>
+      <!-- status bar -->
+      <text x="36" y="30" font-size="14" class="sb" fill="#1a1a1a">9:41</text>
+      <rect x="128" y="10" width="134" height="28" rx="14" fill="#1d1d1f"/>
+      <rect x="308" y="22" width="3" height="6" rx="1" fill="#1a1a1a"/>
+      <rect x="313" y="19" width="3" height="9" rx="1" fill="#1a1a1a"/>
+      <rect x="318" y="16" width="3" height="12" rx="1" fill="#1a1a1a"/>
+      <rect x="330" y="16" width="24" height="12" rx="3" fill="none" stroke="#1a1a1a" stroke-width="1.2"/>
+      <rect x="332" y="18" width="16" height="8" rx="1.5" fill="#1a1a1a"/>
+      <!-- XP bar (full: a level-up is banked) -->
+      <rect x="16" y="52" width="358" height="10" rx="5" fill="#d9d9de"/>
+      <rect x="16" y="52" width="358" height="10" rx="5" fill="#8a8a93"/>
+      <!-- level, queued level-up, timer, kills, pause -->
+      <rect x="16" y="72" width="52" height="24" rx="12" fill="#2b2b30"/>
+      <text x="42" y="88" font-size="12" class="b" fill="#ffffff" text-anchor="middle">Lv 14</text>
+      <rect x="74" y="74" width="40" height="20" rx="10" fill="#ffffff" stroke="#8a8a93" stroke-dasharray="3 2"/>
+      <text x="94" y="88" font-size="11" class="b" fill="#55555c" text-anchor="middle">+1</text>
+      <text x="195" y="94" font-size="26" class="b" fill="#1a1a1a" text-anchor="middle">06:55</text>
+      <text x="334" y="89" font-size="12" fill="#55555c" text-anchor="end">1,284 kills</text>
+      <rect x="344" y="71" width="30" height="28" rx="8" fill="#efeff2" stroke="#cfcfd5"/>
+      <rect x="354" y="78" width="3.5" height="14" rx="1" fill="#55555c"/>
+      <rect x="360.5" y="78" width="3.5" height="14" rx="1" fill="#55555c"/>
+      <!-- stage track: 15 min over 330 px (22 px per minute) -->
+      <rect x="30" y="108" width="330" height="6" rx="3" fill="#d9d9de"/>
+      <rect x="30" y="108" width="152.2" height="6" rx="3" fill="#8a8a93"/>
+      <rect x="173" y="108" width="44" height="6" fill="#ff4d6d" fill-opacity="0.75"/>
+      <path d="M140 105L145 111L140 117L135 111Z" fill="#2b2b30"/>
+      <path d="M250 105L255 111L250 117L245 111Z" fill="#2b2b30"/>
+      <path d="M358 105L363 111L358 117L353 111Z" fill="#2b2b30"/>
+      <text x="30" y="129" font-size="11" fill="#6b6b73">0:00</text>
+      <text x="140" y="129" font-size="11" fill="#3a3a40" text-anchor="middle">5:00</text>
+      <text x="195" y="129" font-size="11" class="b" fill="#3a3a40" text-anchor="middle">W1 6:30–8:30</text>
+      <text x="250" y="129" font-size="11" fill="#3a3a40" text-anchor="middle">10:00</text>
+      <text x="362" y="129" font-size="11" fill="#3a3a40" text-anchor="end">15:00</text>
+
+      <!-- duel bar, anchored under the top HUD -->
+      <rect x="12" y="144" width="366" height="68" rx="14" fill="#ffffff" fill-opacity="0.96" stroke="#d4d4d8"/>
+      <circle cx="46" cy="178" r="22" fill="#ffffff" stroke="#d0d0d6" stroke-width="5"/>
+      <path d="M46 156A22 22 0 1 1 25.9 186.9" fill="none" stroke="#2b2b30" stroke-width="5" stroke-linecap="round"/>
+      <text x="46" y="182" font-size="11" class="b" fill="#111114" text-anchor="middle">0:41</text>
+      <text x="80" y="166" font-size="12" class="b" fill="#1a1a1a">RAVI_07's Echo <tspan class="sb" fill="#8a8a93" font-size="11">· AI</tspan></text>
+      <rect x="316" y="153" width="50" height="18" rx="9" fill="#ff4d6d"/>
+      <text x="341" y="166" font-size="10.5" class="b" fill="#1f1f23" text-anchor="middle">TOUGH</text>
+      <rect x="80" y="174" width="286" height="8" rx="4" fill="#f6c3cd"/>
+      <rect x="80" y="174" width="157" height="8" rx="4" fill="#ff4d6d"/>
+      <rect x="80" y="188" width="112" height="18" rx="9" fill="#f1f1f3" stroke="#c4c4cb"/>
+      <text x="136" y="201" font-size="10.5" fill="#3a3a40" text-anchor="middle">↻ Orbits clockwise</text>
+      <rect x="198" y="188" width="118" height="18" rx="9" fill="#f1f1f3" stroke="#c4c4cb"/>
+      <text x="257" y="201" font-size="10.5" fill="#3a3a40" text-anchor="middle">Keeps its distance</text>
+
+      <!-- host build bar -->
+      <rect x="12" y="716" width="366" height="86" rx="14" fill="#ffffff" fill-opacity="0.96" stroke="#d4d4d8"/>
+      <text x="24" y="740" font-size="11" class="sb" fill="#3a3a40">Active</text>
+      <text x="24" y="754" font-size="11" fill="#77777f">5/6</text>
+      <text x="24" y="778" font-size="11" class="sb" fill="#3a3a40">Passive</text>
+      <text x="24" y="792" font-size="11" fill="#77777f">6/6</text>
+      <g>
+        <rect class="ic" x="86" y="726" width="40" height="30" rx="7"/><text class="lv" x="121" y="751">4</text>
+        <rect class="ic" x="134" y="726" width="40" height="30" rx="7"/><text class="lv" x="169" y="751">5</text>
+        <rect class="ic" x="182" y="726" width="40" height="30" rx="7"/><text class="lv" x="217" y="751">3</text>
+        <rect class="ic" x="230" y="726" width="40" height="30" rx="7"/><text class="lv" x="265" y="751">2</text>
+        <rect class="ic" x="278" y="726" width="40" height="30" rx="7"/><text class="lv" x="313" y="751">2</text>
+        <rect x="326" y="726" width="40" height="30" rx="7" fill="none" stroke="#b0b0b8" stroke-dasharray="3 3"/>
+        <rect class="ic" x="86" y="764" width="40" height="30" rx="7"/><text class="lv" x="121" y="789">3</text>
+        <rect class="ic" x="134" y="764" width="40" height="30" rx="7"/><text class="lv" x="169" y="789">2</text>
+        <rect class="ic" x="182" y="764" width="40" height="30" rx="7"/><text class="lv" x="217" y="789">4</text>
+        <rect class="ic" x="230" y="764" width="40" height="30" rx="7"/><text class="lv" x="265" y="789">2</text>
+        <rect class="ic" x="278" y="764" width="40" height="30" rx="7"/><text class="lv" x="313" y="789">1</text>
+        <rect class="ic" x="326" y="764" width="40" height="30" rx="7"/><text class="lv" x="361" y="789">3</text>
+      </g>
+
+      <!-- home indicator -->
+      <rect x="128" y="824" width="134" height="5" rx="2.5" fill="#1d1d1f"/>
+    </g>
+  </g>
+
+  <!-- callouts on the phone (global coordinates) -->
+  <g class="co"><circle cx="274" cy="110" r="10"/><text x="274" y="114">1</text></g>
+  <g class="co"><circle cx="38" cy="206" r="10"/><text x="38" y="210">2</text></g>
+  <g class="co"><circle cx="400" cy="206" r="10"/><text x="400" y="210">3</text></g>
+  <g class="co"><circle cx="352" cy="226" r="10"/><text x="352" y="230">4</text></g>
+  <g class="co"><circle cx="366" cy="380" r="10"/><text x="366" y="384">5</text></g>
+  <g class="co"><circle cx="174" cy="558" r="10"/><text x="174" y="562">6</text></g>
+  <g class="co"><circle cx="296" cy="556" r="10"/><text x="296" y="560">7</text></g>
+  <g class="co"><circle cx="86" cy="620" r="10"/><text x="86" y="624">8</text></g>
+  <g class="co"><circle cx="38" cy="746" r="10"/><text x="38" y="750">9</text></g>
+  <g class="co"><circle cx="124" cy="384" r="10"/><text x="124" y="388">10</text></g>
+
+  <!-- ============ LEGEND PANEL ============ -->
+  <rect x="446" y="28" width="300" height="890" rx="14" fill="#ffffff" stroke="#dcdce0"/>
+  <text x="464" y="58" font-size="16" class="b" fill="#111114">W1 · Invasion</text>
+  <text x="464" y="77" font-size="11" fill="#6b6b73">Phone = B, the duel · A = telegraph · spec §4</text>
+
+  <!-- inset A: the paused telegraph card -->
+  <text x="464" y="98" font-size="11" class="b" fill="#3a3a40">A · TELEGRAPH: GAME PAUSED UNTIL READY</text>
+  <rect x="464" y="106" width="266" height="244" rx="12" fill="#1f1f23" stroke="#ff4d6d" stroke-width="2"/>
+  <text x="476" y="128" font-size="14" class="b" fill="#ff4d6d">ECHO OF RAVI_07 INVADES</text>
+  <text x="476" y="146" font-size="10.5" fill="#c9c9cf">AI trained on RAVI_07's movement</text>
+  <rect x="674" y="135" width="46" height="16" rx="8" fill="#ff4d6d"/>
+  <text x="697" y="147" font-size="9.5" class="b" fill="#1f1f23" text-anchor="middle">TOUGH</text>
+  <text class="kl" x="476" y="170">TELL</text>
+  <text x="476" y="185" font-size="10.5" fill="#ffffff">↻ Orbits clockwise · keeps its distance</text>
+  <text class="kl" x="476" y="207">FIGHTS WITH</text>
+  <text x="476" y="222" font-size="10.5" fill="#ffffff">Chain Lightning · Orbit Saw · Blade Fan</text>
+  <text class="kl" x="476" y="244">PRIZE IF YOU WIN (FIXED NOW)</text>
+  <rect x="476" y="251" width="10" height="10" rx="2" fill="#6b6b74"/>
+  <text class="pz" x="492" y="260">★ Chain Lightning</text><text class="pl" x="718" y="260">Lv 3 · new</text>
+  <rect x="476" y="268" width="10" height="10" rx="2" fill="#6b6b74"/>
+  <text class="pz" x="492" y="277">Cold Core</text><text class="pl" x="718" y="277">Lv 2 · new</text>
+  <rect x="476" y="285" width="10" height="10" rx="2" fill="#6b6b74"/>
+  <text class="pz" x="492" y="294">Blade Fan</text><text class="pl" x="718" y="294">Lv 2 → 3</text>
+  <text x="476" y="314" font-size="10.5" fill="#c9c9cf">Fight for it, or run out the 60 s clock.</text>
+  <rect x="476" y="321" width="242" height="22" rx="8" fill="#ff4d6d"/>
+  <text x="597" y="336" font-size="11.5" class="b" fill="#1f1f23" text-anchor="middle" letter-spacing="1">READY</text>
+
+  <!-- inset C: off-screen Echo -->
+  <rect x="464" y="358" width="266" height="40" rx="10" fill="#e9e9ec" stroke="#bdbdc4" stroke-dasharray="5 4"/>
+  <text x="476" y="374" font-size="11" class="b" fill="#3a3a40">C · Echo off-screen</text>
+  <text x="476" y="389" font-size="11" fill="#55555c">Edge arrow + distance; haptic tick</text>
+  <text x="704" y="382" font-size="10" class="b" fill="#ff4d6d" text-anchor="end">11 m</text>
+  <path d="M710 368L726 378L710 388Z" fill="#ff4d6d"/>
+
+  <!-- numbered legend -->
+  <g class="ln"><circle cx="474" cy="416" r="8.5"/><text x="474" y="420">1</text></g>
+  <text class="lg"><tspan x="490" y="420">Run HUD at 06:55. +1 = a level-up that</tspan><tspan x="490" y="434.5">waits until the duel ends. Track: W1</tspan><tspan x="490" y="449">6:30–8:30 bounds the Echo's arrival.</tspan></text>
+  <g class="ln"><circle cx="474" cy="466" r="8.5"/><text x="474" y="470">2</text></g>
+  <text class="lg"><tspan x="490" y="470">Duel bar under the top HUD: 60 s ring</tspan><tspan x="490" y="484.5">timer on in-game time.</tspan></text>
+  <g class="ln"><circle cx="474" cy="500" r="8.5"/><text x="474" y="504">3</text></g>
+  <text class="lg"><tspan x="490" y="504">Echo HP, sized to die in ~25 s if your</tspan><tspan x="490" y="518.5">weapons stay on it (§7). Label: d × r.</tspan></text>
+  <g class="ln"><circle cx="474" cy="534" r="8.5"/><text x="474" y="538">4</text></g>
+  <text class="lg"><tspan x="490" y="538">Tell chips from the owner's movement:</tspan><tspan x="490" y="552.5">the read you play against.</tspan></text>
+  <g class="ln"><circle cx="474" cy="568" r="8.5"/><text x="474" y="572">5</text></g>
+  <text class="lg"><tspan x="490" y="572">Commit: glows 0.5 s, then dives inside</tspan><tspan x="490" y="586.5">your shortest range for ~2 s.</tspan></text>
+  <g class="ln"><circle cx="474" cy="602" r="8.5"/><text x="474" y="606">6</text></g>
+  <text class="lg"><tspan x="490" y="606">Chain Lightning's tell: a 0.6 s mark.</tspan><tspan x="490" y="620.5">Step out of the ring before it arcs.</tspan></text>
+  <g class="ln"><circle cx="474" cy="636" r="8.5"/><text x="474" y="640">7</text></g>
+  <text class="lg"><tspan x="490" y="640">Your weapons prefer the Echo whenever</tspan><tspan x="490" y="654.5">it is in their range.</tspan></text>
+  <g class="ln"><circle cx="474" cy="670" r="8.5"/><text x="474" y="674">8</text></g>
+  <text class="lg"><tspan x="490" y="674">Spawns thin to 50%. Mobs ignore the</tspan><tspan x="490" y="688.5">Echo; its shots pass through them.</tspan></text>
+  <g class="ln"><circle cx="474" cy="704" r="8.5"/><text x="474" y="708">9</text></g>
+  <text class="lg"><tspan x="490" y="708">No level-ups mid-duel, so the prize on</tspan><tspan x="490" y="722.5">the telegraph stays valid.</tspan></text>
+  <g class="ln"><circle cx="474" cy="738" r="8.5"/><text x="474" y="742">10</text></g>
+  <text class="lg"><tspan x="490" y="742">Its clockwise orbit. Move against it to</tspan><tspan x="490" y="756.5">meet the dive with your saws.</tspan></text>
+
+  <!-- outcomes -->
+  <line x1="464" y1="772" x2="728" y2="772" stroke="#e4e4e8"/>
+  <text x="464" y="792" font-size="11" class="b" fill="#3a3a40" letter-spacing="0.6">OUTCOMES · §4.1 TARGETS</text>
+  <text class="lg"><tspan x="468" y="811">•</tspan><tspan x="480" y="811">Win, ~75%: THE STEAL (W2), +10 Tribute.</tspan></text>
+  <text class="lg"><tspan x="468" y="829">•</tspan><tspan x="480" y="829">Clock runs out, ≤ 15%: the Echo fades.</tspan></text>
+  <text class="lg"><tspan x="468" y="847">•</tspan><tspan x="480" y="847">Echo breaks you, 10–15%: HP set to 10%,</tspan><tspan x="480" y="861.5">2 s invulnerable, it leaves. Not lethal.</tspan></text>
+  <text class="lg"><tspan x="468" y="880">•</tspan><tspan x="480" y="880">No paid pop-ups for 60 s afterwards.</tspan></text>
+  <text x="464" y="906" font-size="11" fill="#8a8a93">Skill names are hypothetical. Opt-out: Echo Beacon.</text>
+</svg>

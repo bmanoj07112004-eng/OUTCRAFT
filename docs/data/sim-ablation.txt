@@ -1,0 +1,17 @@
+$ node tools/tune.mjs 150   (full AI vs the same rival with its reads switched off = "blind")
+rival    bot      full(win/snatch)  blind   delta
+PIP      greedy   100%/1.6          100%/1.6 0
+PIP      human    99%/1.4           99%/1.4 0
+PIP      reader   99%/0.9           99%/0.9 0
+WREN     greedy   92%/2.2           94%/2.0 +2
+WREN     human    88%/2.0           89%/1.9 +1
+WREN     reader   91%/1.4           93%/1.2 +2
+FOX      greedy   81%/3.2           77%/2.5 -4
+FOX      human    75%/2.4           71%/2.3 -4
+FOX      reader   77%/2.0           79%/1.4 +2
+RAVEN    greedy   57%/3.8           62%/3.1 +5
+RAVEN    human    57%/3.2           57%/2.8 0
+RAVEN    reader   60%/2.5           59%/1.9 -1
+MIMIC    greedy   44%/4.8           41%/3.5 -3
+MIMIC    human    36%/3.6           35%/3.0 -1
+MIMIC    reader   44%/3.2           49%/2.1 +5

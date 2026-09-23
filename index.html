@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#2a7fb8" />
+    <meta name="description" content="OUTCRAFT: a pocket-island crafting race against an AI rival that learns how you move. Get the order, gather, craft it first." />
+    <meta property="og:title" content="OUTCRAFT" />
+    <meta property="og:description" content="Race an AI rival that learns how you move. Craft it first." />
+    <title>OUTCRAFT · craft it before your rival does</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a7fb8'/%3E%3Crect x='10' y='18' width='44' height='34' rx='10' fill='%238fd672'/%3E%3Cpath d='M22 30h20l-4 16H26z' fill='%23fff8ec'/%3E%3Ccircle cx='32' cy='24' r='7' fill='%23ffc83d'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <canvas id="game" aria-label="OUTCRAFT game"></canvas>
+    <button id="btn-pause" class="pause-btn" aria-label="Pause" hidden>II</button>
+
+    <section id="screen-title" class="screen">
+      <div class="panel title-panel">
+        <h1 class="logo">OUT<span>CRAFT</span></h1>
+        <p class="tag">Race an AI rival that <b>learns how you move</b>.<br />Get the order. Gather. Craft it first.</p>
+        <div id="dossier" class="dossier" hidden></div>
+        <button id="btn-play" class="btn primary"><span class="btn-main">PLAY</span><span id="play-sub" class="btn-sub"></span></button>
+        <button id="btn-daily" class="btn daily"><span class="btn-main">DAILY COMMISSION <span id="daily-num"></span></span><span id="daily-sub" class="btn-sub"></span></button>
+        <div class="row">
+          <button id="btn-codex" class="btn ghost">CODEX <span id="codex-count" class="pill"></span></button>
+          <button id="btn-how" class="btn ghost">HOW TO PLAY</button>
+        </div>
+        <div class="foot">
+          <button id="btn-sound" class="link">Sound: on</button>
+          <span>·</span>
+          <a id="link-doc" class="link" href="#" target="_blank" rel="noopener">Design doc</a>
+          <span>·</span>
+          <button id="btn-about" class="link">About</button>
+          <span>·</span>
+          <span>Lila Games design test prototype</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-rivals" class="screen center">
+      <div class="panel scroll">
+        <h2>CHOOSE YOUR RIVAL</h2>
+        <p class="fine">Every rival shares one notebook about you. The stronger they are, the more of it they use.</p>
+        <div id="rival-list" class="rival-list"></div>
+        <button id="btn-race" class="btn primary">RACE</button>
+        <button id="btn-rivals-back" class="btn ghost">BACK</button>
+      </div>
+    </section>
+
+    <section id="screen-how" class="screen">
+      <div class="panel">
+        <h2>HOW TO PLAY</h2>
+        <ol class="rules">
+          <li>The villager posts an <b>order</b>. The card at the top shows its recipe.</li>
+          <li><b>Tap a resource with a gold ring</b> to walk over and gather it. Your bag holds 3.</li>
+          <li>Tap the <b>Workshop</b> to drop things off. Parts craft themselves.</li>
+          <li>Finish the item before your rival. <b>First to 3 orders wins.</b></li>
+        </ol>
+        <p class="fine">Your rival <b>learns how you move</b> and races you for the same resources. Its dotted line shows where it is going. Don't be predictable, and steal its targets.</p>
+        <button id="btn-how-ok" class="btn primary">GOT IT</button>
+      </div>
+    </section>
+
+    <section id="screen-results" class="screen center">
+      <div class="panel scroll">
+        <div id="res-title" class="res-title"></div>
+        <div id="res-score" class="res-score"></div>
+        <div id="res-items" class="res-items"></div>
+        <div id="res-stats" class="res-stats"></div>
+        <div id="res-unlock" class="res-unlock" hidden></div>
+        <div id="res-tells" class="res-tells"></div>
+        <div id="res-notebook" class="notebook"></div>
+        <blockquote id="res-quote" class="quote"></blockquote>
+        <div id="res-daily" class="res-daily" hidden></div>
+        <div class="row">
+          <button id="btn-again" class="btn primary">REMATCH</button>
+          <button id="btn-next" class="btn">NEXT RIVAL</button>
+        </div>
+        <div class="row">
+          <button id="btn-share" class="btn ghost">SHARE</button>
+          <button id="btn-res-codex" class="btn ghost">CODEX</button>
+          <button id="btn-menu" class="btn ghost">MENU</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-codex" class="screen center">
+      <div class="panel scroll">
+        <h2>CODEX</h2>
+        <p class="fine">Everything you have crafted first. Win orders to fill it.</p>
+        <div id="codex-grid" class="codex-grid"></div>
+        <h2 class="mt">YOUR TELLS</h2>
+        <p class="fine">Habits your rivals caught you in. <b>Detect</b> them by getting snatched; <b>break</b> them by playing a match where they stop working.</p>
+        <div id="tells-grid" class="tells-grid"></div>
+        <div id="codex-meta" class="fine"></div>
+        <div class="row">
+          <button id="btn-codex-back" class="btn primary">BACK</button>
+          <button id="btn-forget" class="btn ghost danger">MAKE THEM FORGET ME</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-about" class="screen center">
+      <div class="panel scroll about">
+        <h2>ABOUT OUTCRAFT</h2>
+        <p class="fine">A pocket-island crafting race against an AI rival that learns how you move. Made for the <b>Lila Games Game Designer Written Test (Part 1)</b>.</p>
+        <div class="about-time">
+          <div><span>STARTED</span><b>23 Sep 2026 · 1:07 pm IST</b></div>
+          <div><span>COMPLETED</span><b id="about-done">23 Sep 2026</b></div>
+          <div><span>VERSION</span><b>1.0 · built in one day</b></div>
+        </div>
+        <h3>HOW IT WAS MADE: HUMAN × AI</h3>
+        <div class="about-row"><span class="who human">HUMAN</span><p><b id="about-author">The designer</b> came up with the core idea (a small-world crafting game: you are handed an item to make, find the resources on the island and craft it), chose to make it a race against an AI rival that learns you, set the direction and the quality bar, made the key calls (dropping the first prototype, the premium polish pass, the public release), and playtested and gave feedback.</p></div>
+        <div class="about-row"><span class="who ai">AI</span><p><b>Claude Code</b> (Anthropic) turned that direction into detailed systems and code: recipes and resource tuning, the rival's learning model, the rival ladder, the day-1 hooks, the art-by-code, bot simulations and tests, and first drafts of the documents, plus AI critique and code-review passes whose findings were fixed.</p></div>
+        <div class="about-row"><span class="who check">CHECKED</span><p>11 automated tests; bot simulations for balance, an AI on/off ablation and a learning curve. No human playtest data yet, and the docs say so.</p></div>
+        <p class="fine">No trackers, no accounts, no network calls. Everything the rivals learn about you stays on this device (Codex → "Make them forget me").</p>
+        <div class="row">
+          <a id="about-doc" class="btn ghost" href="#" target="_blank" rel="noopener">DESIGN DOCS</a>
+          <button id="btn-about-back" class="btn primary">BACK</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="screen-pause" class="screen center">
+      <div class="panel">
+        <h2>PAUSED</h2>
+        <label class="toggle"><input type="checkbox" id="chk-glass" /> Show the rival's thoughts (its % guess on each node)</label>
+        <button id="btn-resume" class="btn primary">RESUME</button>
+        <button id="btn-quit" class="btn ghost">QUIT MATCH</button>
+      </div>
+    </section>
+
+    <div id="toast" class="toast" hidden></div>
+    <noscript><p style="padding: 2rem">OUTCRAFT needs JavaScript.</p></noscript>
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
