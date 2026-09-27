@@ -710,6 +710,7 @@ export class Island3D {
     this.pickTargets = [];
     this.labels = [];
     this.labelPool = [];
+    this.addLabel = this.addLabel.bind(this);
     this.timeU = { value: 0 };
     this.buildGeos = [];
     this.buildMats = [];
@@ -1078,7 +1079,6 @@ export class Island3D {
     const mat = seaMaterial(sea, this.timeU);
     const mesh = new THREE.Mesh(geo, mat);
     mesh.renderOrder = -1; // before other transparent things (particles over the sea stay visible)
-    mesh.receiveShadow = sea.kind !== 'lava';
     mesh.frustumCulled = false;
     this.group.add(mesh);
     this.buildGeos.push(geo);
@@ -1432,19 +1432,20 @@ export class Island3D {
     }
 
     // Glass mode: where the rival thinks you are going, as anchors for HUD labels.
-    if (view.glass && view.pred && typeof view.pred.forEach === 'function') {
-      view.pred.forEach((pr, id) => {
-        const st = this.nodeFx[id];
-        if (!st) return;
-        let l = this.labelPool[this.labels.length];
-        if (!l) l = this.labelPool[this.labels.length] = { id: 0, pos: new THREE.Vector3(), p: 0 };
-        l.id = id;
-        l.p = pr && typeof pr === 'object' ? pr.p : pr;
-        l.pos.set(st.x, TOP_H[st.type] + 0.45, st.z);
-        this.labels.push(l);
-      });
-    }
+    if (view.glass && view.pred && typeof view.pred.forEach === 'function') view.pred.forEach(this.addLabel);
     return this.labels;
+  }
+
+  // Glass-mode label anchor for one prediction (bound once in the constructor: no per-frame closures).
+  addLabel(pr, id) {
+    const st = this.nodeFx[id];
+    if (!st) return;
+    let l = this.labelPool[this.labels.length];
+    if (!l) l = this.labelPool[this.labels.length] = { id: 0, pos: new THREE.Vector3(), p: 0 };
+    l.id = id;
+    l.p = pr && typeof pr === 'object' ? pr.p : pr;
+    l.pos.set(st.x, GROUND_Y + TOP_H[st.type] + 0.45, st.z);
+    this.labels.push(l);
   }
 
   // Top of a node (for particles and labels).
@@ -1509,14 +1510,7 @@ export function tilePos(x, y, out = new THREE.Vector3()) {
 export function routeTiles(match, who, out = []) {
   const a = match[who];
   const w = match.world;
-  let n = 0;
-  const put = (x, y) => {
-    const o = out[n] || (out[n] = { x: 0, y: 0 });
-    o.x = x;
-    o.y = y;
-    n++;
-  };
-  put(a.fx, a.fy);
+  let n = putTile(out, 0, a.fx, a.fy);
   const d = a.dest;
   const field = !d ? null : d.kind === 'node' ? w.nodeField[d.id] : d.kind === 'hub' ? w.hubField : d.kind === 'tile' ? tileField(w, d.x, d.y) : null;
   if (field) {
@@ -1524,7 +1518,7 @@ export function routeTiles(match, who, out = []) {
     let y = a.to ? a.to.y : a.y;
     let pdx = a.dx;
     let pdy = a.dy;
-    if (a.to) put(x, y);
+    if (a.to) n = putTile(out, n, x, y);
     for (let g = 0; g < 48; g++) {
       const s = nextStep(w, field, x, y, pdx, pdy);
       if (!s) break;
@@ -1532,11 +1526,11 @@ export function routeTiles(match, who, out = []) {
       y = s.y;
       pdx = s.dx;
       pdy = s.dy;
-      put(x, y);
+      n = putTile(out, n, x, y);
     }
-    if (d.kind === 'node' && w.nodes[d.id]) put(w.nodes[d.id].x, w.nodes[d.id].y);
+    if (d.kind === 'node' && w.nodes[d.id]) n = putTile(out, n, w.nodes[d.id].x, w.nodes[d.id].y);
     else if (d.kind === 'hub') {
-      let best = null;
+      let best = -1;
       let bd = Infinity;
       for (const i of w.workshop) {
         const dd = Math.abs((i % W) - x) + Math.abs(Math.floor(i / W) - y);
@@ -1545,9 +1539,16 @@ export function routeTiles(match, who, out = []) {
           best = i;
         }
       }
-      if (best !== null) put(best % W, Math.floor(best / W));
+      if (best >= 0) n = putTile(out, n, best % W, Math.floor(best / W));
     }
   }
   out.length = n;
   return out;
+}
+
+function putTile(out, n, x, y) {
+  const o = out[n] || (out[n] = { x: 0, y: 0 });
+  o.x = x;
+  o.y = y;
+  return n + 1;
 }

@@ -750,11 +750,13 @@ export function renderLevelPopup(vm, cb = {}) {
     ${vm.best ? `<div class="lp-bestscore">Best score <b>${fmt(vm.best)}</b></div>` : ''}
     <div class="lp-boost-h">BOOSTERS <small>${selNames.length ? esc(selNames.map((b) => b.name).join(' + ')) : 'tap to use'}</small></div>
     <div class="lp-boosts">${boosters}</div>
-    <button class="btn btn-green btn-xl lp-play ${noHearts ? 'nohearts' : ''}" data-act="play">
-      <span class="btn-main">${noHearts ? 'NO HEARTS' : 'PLAY'}</span>
-      <span class="lp-heart">${svgIcon('heart')}<b>${noHearts ? esc(vm.heartsText || '') : '1'}</b></span>
-    </button>
-    <p class="lp-fine">Hearts are only lost if you fail or quit.</p>`;
+    <div class="lp-foot">
+      <button class="btn btn-green btn-xl lp-play ${noHearts ? 'nohearts' : ''}" data-act="play">
+        <span class="btn-main">${noHearts ? 'NO HEARTS' : 'PLAY'}</span>
+        <span class="lp-heart">${svgIcon('heart')}<b>${noHearts ? esc(vm.heartsText || '') : '1'}</b></span>
+      </button>
+      <p class="lp-fine">Hearts are only lost if you fail or quit.</p>
+    </div>`;
   on('modal-level', cb, {
     onClose: () => {
       closeModal('level');

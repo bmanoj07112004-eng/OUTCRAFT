@@ -60,6 +60,8 @@ export class Engine {
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
+    // three resets renderer.info after the shadow pass; reset it ourselves so the stats include shadows.
+    this.renderer.info.autoReset = false;
 
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(55, 1, 0.3, 700);
@@ -124,8 +126,6 @@ export class Engine {
   applyLevel() {
     const r = this.renderer;
     const lvl = this.level;
-    const dpr = window.devicePixelRatio || 1;
-    r.setPixelRatio(lvl === 'low' ? 1 : Math.min(dpr, lvl === 'medium' ? 1.5 : 2));
     const shadows = lvl !== 'low';
     const size = lvl === 'high' ? 2048 : 1024;
     const type = lvl === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
@@ -213,6 +213,8 @@ export class Engine {
     const h = Math.max(1, window.innerHeight || this.canvas.clientHeight || 1);
     this.width = w;
     this.height = h;
+    const dpr = window.devicePixelRatio || 1;
+    this.renderer.setPixelRatio(this.level === 'low' ? 1 : Math.min(dpr, this.level === 'medium' ? 1.5 : 2));
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
@@ -228,6 +230,7 @@ export class Engine {
       this.autoTick(dt);
     }
     this.sky.position.copy(this.camera.position);
+    this.renderer.info.reset();
     this.renderer.render(this.scene, this.camera);
   }
 

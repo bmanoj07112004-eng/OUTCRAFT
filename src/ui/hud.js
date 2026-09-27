@@ -597,6 +597,7 @@ export class HUD {
    * @param {string} [color] pill background / bubble border colour
    */
   label(key, x, y, text, style = 'pill', color = '') {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return; // not refreshed -> hidden by endLabels()
     let r = this.labByKey.get(key);
     if (!r) {
       r = this.labFree.pop();
@@ -658,6 +659,7 @@ export class HUD {
    * @param {'score'|'bad'|'gold'|'good'|'info'} [style]
    */
   pop(text, x, y, style = 'score', dur = 1200) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     let e = this.popFree.pop();
     if (!e) {
       e = el('div', 'hl', '<span></span>');
@@ -817,7 +819,9 @@ export class HUD {
     let text = label;
     let visible = true;
     if (p === 'home' || p === 'interact') {
-      const b = (p === 'home' ? this.homeBtn : this.interBtn).getBoundingClientRect();
+      // Button rects are cached (a per-frame layout read would force reflows); resize() clears them.
+      this.btnRects = this.btnRects || {};
+      const b = this.btnRects[p] || (this.btnRects[p] = (p === 'home' ? this.homeBtn : this.interBtn).getBoundingClientRect());
       x = b.left + b.width / 2;
       y = b.top + 4;
     } else {
@@ -825,6 +829,10 @@ export class HUD {
       y = p.y;
       text = p.label || '';
       visible = p.visible !== false;
+    }
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      this.pointer(null);
+      return;
     }
     const W = window.innerWidth;
     const H = window.innerHeight;
@@ -888,6 +896,7 @@ export class HUD {
    *        (call before setBag adds it) and 'star-*' to the next empty star (call before setStars)
    */
   fly(kind, id, x, y, target = 'bag', dur = 550) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
     const r = this._targetRect(target);
     if (!r) return;
     let img = this.flyFree.pop();
@@ -943,6 +952,7 @@ export class HUD {
 
   /** Re-measure after a layout change (window resize is handled automatically). */
   resize() {
+    this.btnRects = null;
     if (!this.mm.world) return;
     const w = this.mmCanvas.width;
     const h = this.mmCanvas.height;
