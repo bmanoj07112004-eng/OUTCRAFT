@@ -158,16 +158,17 @@ export const STARS_TO_WIN = 3;
 // An order won faster than parSeconds[tier] (measured from GO to the item completing) earns
 // perSecondUnderPar points for every second saved. Only the player scores; the rival never does.
 // Weights: every win banks the same order + matchWin base, so what separates an ordinary win from an
-// excellent one is beating par (par ~ a typical winning pace), outreads, fake-outs and a flawless match;
-// gather and craft stay small, so crafting in orders you go on to lose adds little.
+// excellent one is beating par, outreads, fake-outs and a flawless match. Par is a steady pace from an
+// empty workshop (match.js shrinks it by the share of the order already in stock at GO); gather and
+// craft stay small, so crafting in orders you go on to lose adds little.
 export const SCORE = {
   gather: 10,
   craft: 20,
   order: 500,
-  parSeconds: [0, 10, 12, 14, 16, 18],
-  perSecondUnderPar: 100,
+  parSeconds: [0, 14, 16, 18, 20, 22],
+  perSecondUnderPar: 150,
   outread: 200,
-  fooled: 500,
+  fooled: 400,
   matchWin: 1000,
   flawless: 1500,
 };

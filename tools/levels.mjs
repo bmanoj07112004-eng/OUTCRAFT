@@ -354,7 +354,8 @@ const probe = new Match({ ...matchConfig(LEVELS[0]), model: new PlayerModel() })
 const HAS_OPTIONS = probe.orders.map((o) => o.id).join() === LEVELS[0].options.orders.join();
 const HAS_SCORE = typeof probe.score === 'number';
 
-// One match; returns the summary plus the score split by reason and the won orders' [tier, seconds, index].
+// One match; returns the summary plus the score split by reason and the won orders' [tier, seconds,
+// index, par scale].
 function play(level, driver, model) {
   const cfg = matchConfig(level);
   const m = new Match({ seed: cfg.seed, rival: cfg.rival, twist: cfg.twist, options: cfg.options, model });
@@ -371,7 +372,7 @@ function play(level, driver, model) {
     events = m.drainEvents();
     for (const e of events) {
       if (e.type === 'go') go = e.t;
-      else if (e.type === 'complete' && e.who === 'player') won.push([e.item.tier, +(e.t - go).toFixed(3), m.orderIndex]);
+      else if (e.type === 'complete' && e.who === 'player') won.push([e.item.tier, +(e.t - go).toFixed(3), m.orderIndex, m.parScale ?? 1]);
       else if (e.type === 'score') {
         const q = (parts[e.reason] ||= { n: 0, pts: 0 });
         q.n++;
