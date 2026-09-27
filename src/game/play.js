@@ -45,8 +45,18 @@ function screenOf(v3) {
   return app.engine.worldToScreen(v3, _s);
 }
 
-// Keep a label's centre far enough from the screen edges for its text to fit.
-const edgeX = (x, m) => Math.max(m, Math.min(window.innerWidth - m, x));
+// Keep a label (half its width = half) inside the screen and clear of the HUD columns at the top
+// (avatars and stars on the left, the rival and the minimap on the right).
+function labelX(x, y, half) {
+  const W = window.innerWidth;
+  let lo = half + 6;
+  let hi = W - half - 6;
+  if (y < (window.innerHeight < 560 ? 150 : 215)) {
+    lo = Math.max(lo, 84 + half);
+    hi = Math.min(hi, W - 84 - half);
+  }
+  return lo > hi ? W / 2 : Math.max(lo, Math.min(hi, x));
+}
 
 // ------------------------------------------------------------------ starting a match
 
@@ -60,7 +70,8 @@ export function startLevel(id, boosterIds = []) {
     return false;
   }
   const cfg = matchConfig(level);
-  const boosts = eco.useBoosters(st, boosterIds || []);
+  const used = [...new Set(boosterIds || [])].filter((b) => eco.BOOSTERS[b] && eco.boosterCount(st, b) > 0);
+  const boosts = eco.useBoosters(st, used);
   store.save(st);
   begin({
     kind: 'level',
@@ -71,7 +82,7 @@ export function startLevel(id, boosterIds = []) {
     twist: cfg.twist,
     options: { ...cfg.options, ...boosts, autoReturn: st.settings.autoReturn },
     theme: WORLDS[level.world].theme,
-    boosters: Object.keys(boosts).length ? boosterIds.slice() : [],
+    boosters: used,
   });
   return true;
 }
@@ -300,24 +311,24 @@ function hudFrame(anchors) {
   const c = app.stage.contest;
   if (race && c) {
     const s = screenOf(app.island.nodePos(c.node, _v));
-    if (s.visible) hud.label('contest', edgeX(s.x, 64), s.y - 8, c.rivalFirst ? `${P.rivalDef.name} FIRST` : 'YOU FIRST', 'pill', c.rivalFirst ? '#ff4d5e' : '#3ec22b');
+    if (s.visible) hud.label('contest', labelX(s.x, s.y, 58), s.y - 8, c.rivalFirst ? `${P.rivalDef.name} FIRST` : 'YOU FIRST', 'pill', c.rivalFirst ? '#ff4d5e' : '#3ec22b');
   }
   // Speech bubbles stay clear of the bag and buttons at the bottom.
   const now = clock();
   const low = window.innerHeight - (window.innerHeight < 560 ? 90 : 170);
   if (P.bubble && now < P.bubble.until) {
     const s = screenOf(app.stage.rival.anchor(_v));
-    if (s.visible) hud.label('say-rival', edgeX(s.x, 96), Math.min(s.y, low), P.bubble.text, 'bubble', P.rivalDef.color);
+    if (s.visible) hud.label('say-rival', labelX(s.x, s.y, 92), Math.min(s.y, low), P.bubble.text, 'bubble', P.rivalDef.color);
   }
   if (P.vbubble && now < P.vbubble.until) {
     const s = screenOf(app.stage.villager.anchor(_v));
-    if (s.visible) hud.label('say-villager', edgeX(s.x, 96), Math.min(s.y, low), P.vbubble.text, 'bubble', '#ff8c42');
+    if (s.visible) hud.label('say-villager', labelX(s.x, s.y, 92), Math.min(s.y, low), P.vbubble.text, 'bubble', '#ff8c42');
   }
   // Bag ready: mark the Workshop.
   if (race && ready && !P.tutorial) {
     app.island.displayPos(_v).y += 0.9; // just above the floating order card
     const s = screenOf(_v);
-    if (s.visible) hud.label('workshop', edgeX(s.x, 70), s.y, 'DROP IT HERE', 'pill', '#2f86ff');
+    if (s.visible) hud.label('workshop', labelX(s.x, s.y, 62), s.y, 'DROP IT HERE', 'pill', '#2f86ff');
   }
   if (anchors && anchors.length) {
     for (const a of anchors) {
@@ -384,7 +395,7 @@ function popAt(text, x, y, style, dur) {
   else P.popK = 0;
   P.popT = now;
   P.popX = x;
-  app.hud.pop(text, edgeX(x, text.length > 6 ? 90 : 40), y - P.popK * 26, style, dur);
+  app.hud.pop(text, labelX(x, y, text.length * 6 + 12), y - P.popK * 26, style, dur);
 }
 
 function popWorld(text, pos, style, dur, dy = 0) {

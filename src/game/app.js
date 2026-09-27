@@ -8,7 +8,7 @@ import { portraitURL } from '../3d/characters.js';
 import { SKIN_BY_ID, DEFAULT_SKIN } from '../skins.js';
 
 export const REPO_URL = 'https://github.com/bmanoj07112004-eng/OUTCRAFT';
-export const ABOUT = { author: 'B Manoj', completed: '23 Sep 2026 · 3D edition' };
+export const ABOUT = { author: 'B Manoj', completed: '23 Sep 2026 · first public build' };
 export const STEP = 1 / 60; // fixed simulation step (s)
 
 const params = new URLSearchParams(location.search);
