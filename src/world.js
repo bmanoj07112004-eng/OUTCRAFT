@@ -186,3 +186,6 @@ export function regionOf(x, y) {
 }
 
 export const sideOf = (x) => (x < 4 ? 0 : x > 4 ? 2 : 1); // 0 left, 1 centre, 2 right
+
+// True if (x, y) is an in-bounds walkable tile (integer tile coordinates).
+export const isWalkable = (world, x, y) => inBounds(x, y) && world.walkable[idx(x, y)];

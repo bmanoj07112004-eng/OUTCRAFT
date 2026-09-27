@@ -26,13 +26,14 @@ export function fresh() {
     seenHowTo: false,
     lastPlayed: null,
     wallet: { coins: 300, gems: 15 },
-    hearts: { n: 5, since: null },
+    hearts: { n: 5, since: null }, // since = ms timestamp when regeneration started (null when full)
     inventory: { skins: [DEFAULT_SKIN], equipped: DEFAULT_SKIN, boosters: { boots: 1, backpack: 1, headstart: 0, fog: 0 } },
-    levels: {},
-    adventure: { unlocked: 1 },
-    dailyReward: { lastKey: null, day: 0 },
+    levels: {}, // [level id]: { stars, best, plays }
+    adventure: { unlocked: 1 }, // highest playable level id
+    dailyReward: { lastKey: null, day: 0, best: 0 }, // day = consecutive days claimed (1..7 cycle); best = highest day reached
     achievements: { claimed: {} },
-    counters: { levelsWon: 0, starsEarned: 0, fakeOuts: 0, outreads: 0, flawless: 0, coinsEarned: 0, quickKey: null, quickPaid: 0 },
+    counters: { levelsWon: 0, starsEarned: 0, fakeOuts: 0, outreads: 0, flawless: 0, coinsEarned: 0 },
+    quickRace: { key: null, paid: 0 }, // Quick Race / Daily Commission wins paid today (economy.recordQuickRace)
   };
 }
 
@@ -56,6 +57,7 @@ function merge(def, saved) {
 }
 
 const count = (v) => Math.max(0, Math.floor(v));
+const QUALITY = ['auto', 'low', 'medium', 'high'];
 
 // Upgrade any saved object (a v1 save from the 2D game included) to the current shape.
 export function migrate(saved) {
@@ -69,8 +71,18 @@ export function migrate(saved) {
   if (!inv.skins.includes(DEFAULT_SKIN)) inv.skins.unshift(DEFAULT_SKIN);
   if (!inv.skins.includes(inv.equipped)) inv.equipped = DEFAULT_SKIN;
   for (const id of Object.keys(inv.boosters)) inv.boosters[id] = Number.isFinite(inv.boosters[id]) ? count(inv.boosters[id]) : 0;
+  // Per-level records: keep only well-formed entries keyed by a level number.
+  for (const [id, r] of Object.entries(s.levels)) {
+    if (!/^\d+$/.test(id) || !isObj(r)) delete s.levels[id];
+    else s.levels[id] = { stars: Math.min(3, count(+r.stars || 0)), best: count(+r.best || 0), plays: count(+r.plays || 0) };
+  }
   s.adventure.unlocked = Math.max(1, Math.floor(s.adventure.unlocked));
   s.dailyReward.day = Math.min(7, count(s.dailyReward.day));
+  s.dailyReward.best = Math.min(7, Math.max(count(s.dailyReward.best), s.dailyReward.day));
+  for (const k of Object.keys(fresh().counters)) s.counters[k] = count(s.counters[k]);
+  s.quickRace.paid = count(s.quickRace.paid);
+  if (!QUALITY.includes(s.settings.quality)) s.settings.quality = 'auto';
+  s.settings.sensitivity = Math.min(3, Math.max(0.2, s.settings.sensitivity));
   return s;
 }
 
