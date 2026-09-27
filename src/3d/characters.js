@@ -2009,8 +2009,12 @@ function fallbackPortrait(look, size) {
 // Preview: a small turntable for the shop / locker (own renderer on the given canvas)
 
 export class Preview {
-  constructor(canvas, { pedestal = '#ffffff', trim = '#ffd23d' } = {}) {
+  // options: pedestal = colour of the 3D pedestal, or false to draw none (e.g. over a CSS pedestal; a
+  // transparent shadow catcher is used instead); trim = rim colour; feet = where the feet stand, as a
+  // fraction of the canvas height from the bottom.
+  constructor(canvas, { pedestal = '#ffffff', trim = '#ffd23d', feet = 0.14 } = {}) {
     this.canvas = canvas;
+    this.feet = clamp(feet, 0, 0.6);
     const renderer = (this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true }));
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -2034,18 +2038,24 @@ export class Preview {
     this.table = new THREE.Group();
     this.scene.add(this.table);
 
-    // pedestal: soft disc with a gold rim
+    // pedestal: soft disc with a gold rim (or just a shadow catcher)
     this._own = [];
     const own = (x) => (this._own.push(x), x);
-    const stone = own(new THREE.MeshStandardMaterial({ color: pedestal, roughness: 0.55 }));
-    const rimMat = own(new THREE.MeshStandardMaterial({ color: trim, roughness: 0.3, metalness: 0.8, envMap: envMap() }));
-    const base = new THREE.Mesh(own(new THREE.CylinderGeometry(0.8, 0.88, 0.22, 48)), stone);
-    base.position.y = -0.11;
-    base.receiveShadow = true;
-    const rim = new THREE.Mesh(own(new THREE.TorusGeometry(0.8, 0.03, 8, 64)), rimMat);
-    rim.rotation.x = Math.PI / 2;
-    rim.position.y = -0.005;
-    this.table.add(base, rim);
+    if (pedestal) {
+      const stone = own(new THREE.MeshStandardMaterial({ color: pedestal, roughness: 0.55 }));
+      const rimMat = own(new THREE.MeshStandardMaterial({ color: trim, roughness: 0.3, metalness: 0.8, envMap: envMap() }));
+      const base = new THREE.Mesh(own(new THREE.CylinderGeometry(0.8, 0.88, 0.22, 48)), stone);
+      base.position.y = -0.11;
+      base.receiveShadow = true;
+      const rim = new THREE.Mesh(own(new THREE.TorusGeometry(0.8, 0.03, 8, 64)), rimMat);
+      rim.rotation.x = Math.PI / 2;
+      rim.position.y = -0.005;
+      this.table.add(base, rim);
+    } else {
+      const catcher = new THREE.Mesh(own(new THREE.CircleGeometry(1, 32).rotateX(-Math.PI / 2)), own(new THREE.ShadowMaterial({ opacity: 0.22 })));
+      catcher.receiveShadow = true;
+      this.table.add(catcher);
+    }
 
     this.character = null;
     this._params = { x: 0, z: 0, heading: 0, moving: 0, state: 'idle', emote: null };
@@ -2103,11 +2113,13 @@ export class Preview {
     this.renderer.setSize(w, h, false);
     const cam = this.camera;
     cam.aspect = w / h;
-    // fit a 1.8 m x 2.2 m box (character with hat, top of the pedestal)
-    const fov = (cam.fov * Math.PI) / 180;
-    const dist = Math.max(1.1 / Math.tan(fov / 2), 0.9 / (Math.tan(fov / 2) * cam.aspect)) + 0.5;
-    cam.position.set(0, 0.95 + dist * 0.13, dist);
-    cam.lookAt(0, 0.92, 0);
+    // fit the character (about 2.2 m with a hat, 1.8 m wide) with the feet at `feet` from the bottom
+    const tan = Math.tan((cam.fov * Math.PI) / 360);
+    const vis = Math.max(2.25 / (1 - this.feet), 1.8 / cam.aspect);
+    const cy = vis * (0.5 - this.feet);
+    const dist = vis / 2 / tan;
+    cam.position.set(0, cy + dist * 0.08, dist);
+    cam.lookAt(0, cy, 0);
     cam.updateProjectionMatrix();
     return true;
   }

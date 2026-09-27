@@ -4,12 +4,13 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>OUTCRAFT dev: characters</title>
+    <link rel="icon" href="data:," />
     <!--
       Harness for src/3d/characters.js.
         ?anim=idle|walk|jog|gather|scoop|deposit|wait|think|cheer|sad|hop|wave, a comma list (one per character, cycling) or mix (all of them)
         ?set=all|skins|rivals|explorer,pip,villager   ?cols=7   ?zoom=1   ?yaw=0 (degrees, 180 = backs)
         ?carry=wood,stone,ore   ?t=1.2 (freeze at this time)   ?tone=aces|none
-        ?portraits=1 (&size=128)   ?preview=1 (&skin=wizard)   ?items=1
+        ?portraits=1 (&size=128)   ?preview=1 (&skin=wizard, &stage=1 = inside the real shop stage markup)   ?items=1
     -->
     <script type="importmap">{"imports":{"three":"../vendor/three/three.module.min.js","three/addons/":"../vendor/three/addons/"}}</script>
     <style>
@@ -124,10 +125,26 @@
 
       function preview() {
         document.getElementById('c').remove();
-        const cv = document.createElement('canvas');
-        cv.id = 'pv';
-        document.body.append(cv);
-        const pv = new Preview(cv);
+        let cv;
+        let pv;
+        if (P.get('stage')) {
+          // the shop's own stage (style.css): CSS pedestal under a transparent canvas
+          const css = document.createElement('link');
+          css.rel = 'stylesheet';
+          css.href = '../style.css';
+          document.head.append(css);
+          const wrap = document.createElement('div');
+          wrap.style.cssText = 'position:absolute;left:16px;right:16px;top:120px;';
+          wrap.innerHTML = '<div class="stage"><div class="stage-glow"></div><div class="stage-pedestal"></div><canvas class="stage-canvas"></canvas></div>';
+          document.body.append(wrap);
+          cv = wrap.querySelector('canvas');
+          pv = new Preview(cv, { pedestal: false, feet: 0.17 });
+        } else {
+          cv = document.createElement('canvas');
+          cv.id = 'pv';
+          document.body.append(cv);
+          pv = new Preview(cv);
+        }
         const ids = P.get('skin') ? [P.get('skin')] : SKINS.map((s) => s.id);
         let i = 0;
         let next = 0;
@@ -155,6 +172,7 @@
         renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = P.get('tone') === 'none' ? THREE.NoToneMapping : THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.05; // as in engine.js
         renderer.shadowMap.enabled = true;
         renderer.shadowMap.type = THREE.PCFSoftShadowMap;
         const scene = new THREE.Scene();
