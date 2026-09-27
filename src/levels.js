@@ -7,8 +7,11 @@
 //
 // Levers, weakest to strongest: order tiers, twists (introduced one at a time, each with a one-line
 // explanation), goal conditions (craft a named item, win flawless, beat the clock) and the rival
-// ladder PIP -> WREN -> FOX -> RAVEN -> MIMIC. Star thresholds are calibrated with bot players
-// (node tools/levels.mjs): a solid player gets 2 stars on about half its wins, 3 stars on one in five.
+// ladder PIP -> WREN -> FOX -> RAVEN -> MIMIC. Difficulty and star thresholds are calibrated with bot
+// players on the joystick (node tools/levels.mjs, casual / average / skilled stick bots plus tap bots):
+// an average player gets 2 stars on about half its passes and 3 stars on about one in five, and the
+// third star always sits well above the second and out of reach of an ordinary win (it takes beating
+// par, outreads and fake-outs, or a flawless match).
 
 import { RIVALS, ITEMS, ITEM_BY_ID, DAILY_TWISTS, STARS_TO_WIN } from './data.js';
 import { THEMES } from './3d/themes.js';
@@ -41,9 +44,9 @@ const TABLE = [
   // World 1: Meadow Isle. PIP only watches; you learn to gather, carry and craft. WREN guards the gate.
   L('First Steps', 'pip', '112', { seed: 1101, stw: 2 }),
   L('Buttercup Bend', 'pip', '122', { seed: 1132, stw: 2 }),
-  L('Clover Crossing', 'pip', '11222', { seed: 1203 }),
-  L('Honeybee Hollow', 'pip', '11222', { seed: 1184, craft: 'lantern', hard: true }),
-  L('Picnic Point', 'pip', '122', { seed: 1105, stw: 2 }),
+  L('Clover Crossing', 'pip', '12222', { seed: 1203 }),
+  L('Honeybee Hollow', 'pip', '11222', { seed: 1184, craft: 'anvil', hard: true }),
+  L('Picnic Point', 'pip', '11222', { seed: 1105 }),
   L('Daisy Chain', 'pip', '12222', { seed: 1116, twist: 'bigbag' }),
   L('Windmill Way', 'pip', '12223', { seed: 1157 }),
   L('Early Bird', 'wren', '11222', { seed: 1118, hard: true }),
@@ -59,37 +62,37 @@ const TABLE = [
   L('Cactus Corner', 'wren', '12233', { seed: 2246, twist: 'rush' }),
   L('Dry Spell', 'wren', '12233', { seed: 2147, twist: 'drought' }),
   L('Fox Tracks', 'fox', '12222', { seed: 2158, hard: true }),
-  L('Palm Shade', 'wren', '12223', { seed: 2129, twist: 'bigbag' }),
-  L('Den of the Fox', 'fox', '12233', { seed: 2230, twist: 'drought' }),
+  L('Palm Shade', 'wren', '11222', { seed: 2129, twist: 'bigbag' }),
+  L('Den of the Fox', 'fox', '12333', { seed: 2230, twist: 'drought' }),
 
   // World 3: Frost Fjord. Time limits arrive; FOX copies your routines; RAVEN watches from the ice.
   L('First Frost', 'fox', '12223', { seed: 3251, time: 70 }),
   L('Snowdrift Lane', 'fox', '22233', { seed: 3232 }),
   L('Icicle Inlet', 'fox', '22233', { seed: 3153, twist: 'rush', time: 60 }),
-  L('Beat the Thaw', 'fox', '12223', { seed: 3174, goal: 'win-time', time: 45, hard: true }),
+  L('Beat the Thaw', 'fox', '22233', { seed: 3174, goal: 'win-time', time: 45, hard: true }),
   L('Cocoa Cabin', 'wren', '12233', { seed: 3145, twist: 'bigbag' }),
-  L('Frozen Falls', 'fox', '22333', { seed: 3126, craft: 'compass' }),
-  L('Quick Paws', 'fox', '22333', { seed: 3167, twist: 'nimble' }),
+  L('Frozen Falls', 'fox', '23334', { seed: 3126, craft: 'compass' }),
+  L('Quick Paws', 'fox', '22233', { seed: 3167, twist: 'nimble' }),
   L("Raven's Watch", 'raven', '22233', { seed: 3218, hard: true }),
   L('Warm Hearth', 'fox', '12223', { seed: 3259, twist: 'bigbag' }),
-  L('Northern Lights', 'raven', '22333', { seed: 3200, twist: 'nimble', time: 70 }),
+  L('Northern Lights', 'raven', '23344', { seed: 3200, twist: 'nimble', time: 56 }),
 
   // World 4: Ember Peak. RAVEN reads every habit; the orders grow into masterworks.
-  L('Ash Meadow', 'raven', '22233', { seed: 4251 }),
-  L('Cinder Steps', 'raven', '22333', { seed: 4132, twist: 'drought' }),
-  L('Masterwork Forge', 'raven', '33344', { seed: 4153, twist: 'masterwork' }),
-  L('Magma Rush', 'raven', '22333', { seed: 4254, twist: 'rush', goal: 'win-time', time: 50, hard: true }),
+  L('Ash Meadow', 'raven', '12233', { seed: 4251 }),
+  L('Cinder Steps', 'raven', '23334', { seed: 4132, twist: 'drought' }),
+  L('Masterwork Forge', 'raven', '34444', { seed: 4153, twist: 'masterwork' }),
+  L('Magma Rush', 'raven', '22333', { seed: 4254, twist: 'rush', goal: 'win-time', time: 44, hard: true }),
   L('Obsidian Rest', 'fox', '22333', { seed: 4135, twist: 'bigbag' }),
-  L('Smoke Signals', 'raven', '23334', { seed: 4136, craft: 'rod', time: 65 }),
-  L('Storm Front', 'raven', '23334', { seed: 4227, twist: 'storm' }),
+  L('Smoke Signals', 'raven', '23334', { seed: 4136, craft: 'rod', time: 60 }),
+  L('Storm Front', 'raven', '22334', { seed: 4227, twist: 'storm' }),
   L('Lava Lanes', 'raven', '23334', { seed: 4218, twist: 'nimble', goal: 'win-time', time: 58, hard: true }),
-  L('Hot Springs', 'fox', '22333', { seed: 4229, twist: 'bigbag' }),
-  L('Heart of the Volcano', 'raven', '23344', { seed: 4250, twist: 'storm', time: 90 }),
+  L('Hot Springs', 'fox', '22233', { seed: 4229, twist: 'bigbag' }),
+  L('Heart of the Volcano', 'raven', '33344', { seed: 4250, twist: 'storm', time: 90 }),
 
   // World 5: Crystal Caverns. RAVEN at its sharpest, until MIMIC steps out of the mirrors.
-  L('Glimmer Gate', 'raven', '22333', { seed: 5161, twist: 'bigbag' }),
-  L('Prism Path', 'raven', '23334', { seed: 5112, twist: 'rush', time: 60 }),
-  L('Echo Chamber', 'raven', '33444', { seed: 5163, twist: 'drought', craft: 'bell' }),
+  L('Glimmer Gate', 'raven', '12233', { seed: 5161, twist: 'bigbag' }),
+  L('Prism Path', 'raven', '23334', { seed: 5112, twist: 'rush', time: 48 }),
+  L('Echo Chamber', 'raven', '22334', { seed: 5163, twist: 'drought', craft: 'rod' }),
   L('Geode Gauntlet', 'raven', '233', { seed: 5134, stw: 2, goal: 'flawless', hard: true }),
   L('Moonpool', 'fox', '23334', { seed: 5145, twist: 'bigbag' }),
   L('Shard Spiral', 'raven', '33344', { seed: 5256, twist: 'masterwork', time: 75 }),
@@ -100,26 +103,30 @@ const TABLE = [
 
   // World 6: Sky Gardens. MIMIC knows you better than you do. Surprise it.
   L('Cloud Steps', 'mimic', '23334', { seed: 6251, twist: 'bigbag' }),
-  L('Kite Hill', 'mimic', '23334', { seed: 6162, twist: 'rush' }),
-  L('Rainbow Bridge', 'mimic', '23444', { seed: 6253, craft: 'hourglass' }),
+  L('Kite Hill', 'mimic', '33344', { seed: 6162, twist: 'drought' }),
+  L('Rainbow Bridge', 'mimic', '22344', { seed: 6253, craft: 'hourglass' }),
   L('Thunderhead', 'mimic', '33344', { seed: 6164, twist: 'storm', hard: true }),
   L('Petal Drift', 'raven', '23334', { seed: 6195, twist: 'bigbag' }),
-  L('Sunbeam Spires', 'mimic', '35344', { seed: 6136, twist: 'masterwork', time: 80 }),
-  L('Gale Garden', 'mimic', '33344', { seed: 6127, twist: 'nimble', goal: 'win-time', time: 60 }),
-  L('Clockwork Sky', 'mimic', '53444', { seed: 6218, hard: true }),
+  L('Sunbeam Spires', 'mimic', '23344', { seed: 6136, twist: 'drought', time: 80 }),
+  L('Gale Garden', 'mimic', '33344', { seed: 6127, twist: 'rush', goal: 'win-time', time: 70 }),
+  L('Clockwork Sky', 'mimic', '54444', { seed: 6218, hard: true }),
   L('Sky Harbor', 'raven', '33444', { seed: 6169, twist: 'bigbag' }),
-  L('Crown of the Clouds', 'mimic', '34445', { seed: 6140, twist: 'storm', time: 85 }),
+  L('Crown of the Clouds', 'mimic', '34444', { seed: 6140, twist: 'storm', time: 85 }),
 ];
 
-// Score needed for 2 and 3 stars, per level (index = id - 1), from `node tools/levels.mjs 80`: the human
-// bot's median passing score and its 80th percentile (at least 100 apart); level 1 is a little kinder.
+// Score needed for 2 and 3 stars, per level (index = id - 1), from the average stick player's passes in
+// `node tools/levels.mjs` runs (two mixed runs of 150 players and three average-only runs of 100, about
+// 420 average players): 2 stars ~ its median passing score, 3 stars ~ its 80th percentile, always at
+// least max(400, 10% of two) above two and above any ordinary win (no speed bonus, no outread or
+// fake-out). Where scores bunch up (levels 1, 2, 14, 44: short races or a flawless goal) two sits lower
+// so the third star stays within reach of fast play.
 const THRESHOLDS = [
-  [3200, 3300], [3400, 3500], [4200, 4350], [3850, 4250], [3400, 3650], [4350, 4550], [3850, 4050], [4300, 4500], [3750, 4100], [4550, 4650],
-  [4050, 4250], [4350, 4450], [4350, 4500], [3400, 3500], [3750, 3900], [4550, 4650], [4400, 4700], [4350, 4550], [4050, 4250], [4100, 4200],
-  [4250, 4400], [4700, 4850], [4450, 4750], [4800, 5000], [4300, 4550], [4450, 4750], [4600, 4800], [4350, 4850], [4200, 4450], [4850, 5100],
-  [4500, 4700], [4450, 4750], [4950, 5300], [4700, 5050], [4400, 4700], [4750, 5100], [4450, 4700], [4400, 4550], [4600, 4850], [4500, 4950],
-  [4400, 4600], [4900, 5500], [5100, 5500], [3400, 3600], [4450, 4650], [4500, 4800], [4350, 4700], [4400, 4600], [5350, 5600], [4850, 5100],
-  [4900, 5200], [5250, 5400], [4650, 4850], [5200, 5550], [4500, 4600], [5350, 5500], [5050, 5350], [5100, 5450], [5300, 5600], [4850, 5300],
+  [3650, 4050], [4000, 4450], [4300, 4800], [4150, 5250], [3800, 4200], [4650, 5150], [3750, 4300], [4050, 4700], [3450, 3850], [4800, 5300],
+  [3950, 4350], [4000, 4550], [4400, 4850], [4000, 4450], [3600, 4200], [4900, 5400], [4700, 5200], [4300, 4750], [3950, 4400], [4450, 5050],
+  [4350, 4800], [4700, 5200], [4350, 4900], [4850, 5350], [4700, 5200], [4850, 5650], [4650, 5150], [3950, 4350], [4600, 5100], [4750, 5300],
+  [4700, 5350], [4500, 5100], [5400, 6050], [5150, 5750], [4400, 5100], [4500, 5100], [4000, 4600], [4200, 4750], [4900, 5400], [4150, 4600],
+  [4950, 5450], [5000, 5500], [4650, 5150], [4100, 4550], [4300, 4750], [4500, 5050], [4850, 5350], [4500, 4950], [4850, 5350], [4650, 5250],
+  [5200, 5750], [4600, 5250], [4500, 4950], [4600, 5250], [4850, 5400], [4300, 4900], [4900, 5400], [5400, 5950], [4750, 5350], [4550, 5050],
 ];
 
 // First-clear coins grow with the world; hard levels pay 1.5x, bosses 2x plus gems.

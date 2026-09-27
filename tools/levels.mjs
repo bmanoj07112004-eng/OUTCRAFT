@@ -4,10 +4,11 @@
 // in three skill presets. Prints per level, for the calibration group (default: the average stick
 // player): win and pass rate per attempt, first-try pass rate, score quantiles, the share of passes
 // reaching 2 and 3 stars with the current thresholds, and suggested thresholds (2 stars ~ median passing
-// score; 3 stars ~ 80th percentile, at least max(400, 10% of two) higher and above any ordinary win),
-// plus the pass rate of every other group; then a per-world summary per group and an economy projection.
+// score; 3 stars ~ 80th percentile, at least max(400, 10% of two) higher and above any ordinary win; see
+// suggest()), plus the pass rate of every other group; then a per-world summary per group, what each star
+// band took, and an economy projection.
 //
-//   node tools/levels.mjs [players=40] [--pop=mixed] [--cal=average] [--levels=1-60] [--tries=8] [--salt=0] [--json=out.json]
+//   node tools/levels.mjs [players=40] [--pop=mixed] [--cal=average] [--levels=1-60] [--warm=0] [--tries=8] [--salt=0] [--json=out.json]
 //
 // --pop: 'mixed' (default, casual:3,average:4,skilled:2,human:1), one group, or a weighted list such as
 // casual:1,average:2. Groups: casual, average, skilled (stick bots), human, greedy, random, reader (tap
@@ -22,7 +23,7 @@ import { fresh, recordMatch } from '../src/storage.js';
 import * as eco from '../src/economy.js';
 import { SKINS } from '../src/skins.js';
 import { mulberry32 } from '../src/rng.js';
-import { idx, nextStep, isWalkable } from '../src/world.js';
+import { W, idx, nextStep, isWalkable } from '../src/world.js';
 
 const args = process.argv.slice(2);
 const flag = (name, def) => {
@@ -30,7 +31,14 @@ const flag = (name, def) => {
   return a ? a.slice(name.length + 3) : def;
 };
 const N = +(args.find((a) => /^\d+$/.test(a)) || 40);
-const [from, to] = flag('levels', `1-${LEVELS.length}`).split('-').map(Number);
+// --levels: a range or a list of ranges (1-60, 4,5,33-35). --warm=K: before a level whose predecessor is
+// not in the list, each player first plays the K levels before it once, unscored, so the rival's notes on
+// the player look like they would in a full run.
+const PICK = new Set(flag('levels', `1-${LEVELS.length}`).split(',').flatMap((r) => {
+  const [a, b = a] = r.split('-').map(Number);
+  return Array.from({ length: b - a + 1 }, (_, i) => a + i);
+}));
+const WARM = +flag('warm', 0);
 const MAX_TRIES = +flag('tries', 8);
 const SALT = +flag('salt', 0); // changes every bot's random choices, to check that results are stable
 const JSON_OUT = flag('json', null);
@@ -101,21 +109,22 @@ function tapDriver(name, rng) {
 // A thumb on a joystick, through match.setMove only: steer along the BFS path toward the chosen node
 // (or the Workshop), aiming a few path tiles ahead when the line is clear, with a heading error that
 // drifts; take a moment to decide after GO, every gather and deposit, and to notice a lost target;
-// sometimes hesitate, sometimes pick a worse node or head home half full; press HOME now and then.
+// sometimes hesitate, sometimes pick a farther node or head home half full; press HOME now and then.
 // Skilled players also glance at the rival and switch away from a node it will reach first.
 //
 // react: decision delay (mean, +-spread) s; noise: heading error sd (rad), drifting over `drift` s;
-// hesitate: chance of a pause (pause range, s) at a decision; pick: chance of the best / second best
-// node (otherwise any needed node); look: path tiles steered ahead; watch: chance a decision (or a
-// glance every 0.5 s on the way) accounts for the rival; early: chance of heading home part full;
-// home: chance of pressing HOME instead of steering home; mag: how far the stick is pushed.
+// hesitate: chance of a pause (pause range, s) at a decision; fuzz: how sloppily nodes are compared
+// (softmax temperature in tiles of path: 2 = a node 2 tiles farther is picked e^-1 as often); look: path
+// tiles steered ahead; watch: chance a decision (or a glance every 0.5 s on the way) accounts for the
+// rival; early: chance of heading home part full; home: chance of pressing HOME instead of steering
+// home; mag: how far the stick is pushed.
 const STICK = {
-  casual: { react: [0.42, 0.18], noise: 0.3, drift: 0.5, hesitate: 0.12, pause: [0.3, 1.2], pick: [0.6, 0.25], look: 2, watch: 0.05, early: 0.1, home: 0.35, mag: 0.97 },
-  average: { react: [0.28, 0.12], noise: 0.22, drift: 0.45, hesitate: 0.07, pause: [0.3, 0.9], pick: [0.75, 0.18], look: 3, watch: 0.3, early: 0.05, home: 0.25, mag: 1 },
-  skilled: { react: [0.14, 0.07], noise: 0.12, drift: 0.4, hesitate: 0.02, pause: [0.2, 0.5], pick: [0.9, 0.08], look: 4, watch: 0.75, early: 0.02, home: 0.15, mag: 1 },
+  casual: { react: [0.4, 0.18], noise: 0.3, drift: 0.5, hesitate: 0.12, pause: [0.3, 1.2], fuzz: 2, look: 2, watch: 0.05, early: 0.08, home: 0.35, mag: 0.97 },
+  average: { react: [0.28, 0.12], noise: 0.22, drift: 0.45, hesitate: 0.07, pause: [0.3, 0.9], fuzz: 1.2, look: 3, watch: 0.3, early: 0.04, home: 0.25, mag: 1 },
+  skilled: { react: [0.14, 0.07], noise: 0.12, drift: 0.4, hesitate: 0.02, pause: [0.2, 0.5], fuzz: 0.5, look: 4, watch: 0.75, early: 0.01, home: 0.15, mag: 1 },
 };
 const HOME = { kind: 'hub' };
-const RIVAL_EDGE = 0.3; // seconds: a watching player avoids a node the rival reaches this much sooner (or less later)
+const RIVAL_EDGE = 0.3; // seconds: a watching player gives up a node the rival would reach first or within this much after it
 
 // Can a circle of the player's size travel in a straight line from (x0, y0) to the tile centre (x1, y1)?
 function clearLine(w, x0, y0, x1, y1) {
@@ -133,7 +142,7 @@ class StickBot {
   constructor(skill, rng) {
     this.k = skill;
     this.rng = rng;
-    // Every player has its own pace within the preset.
+    // Every player has its own pace and steadiness within the preset.
     this.pace = Math.exp(gauss(rng) * 0.2);
     this.noise = skill.noise * Math.exp(gauss(rng) * 0.2);
     this.reset();
@@ -249,9 +258,11 @@ class StickBot {
       return best ? { kind: 'node', id: best.id, patient: true } : null;
     }
     if (bag && this.rng() < k.early) return HOME;
-    c.sort((a, b) => a.cost - b.cost);
-    const r = this.rng();
-    const pick = c.length === 1 || r < k.pick[0] ? c[0] : r < k.pick[0] + k.pick[1] ? c[1] : c[Math.floor(this.rng() * c.length)];
+    const best = Math.min(...c.map((x) => x.cost));
+    let total = 0;
+    for (const x of c) total += x.w = Math.exp((best - x.cost) / k.fuzz);
+    let r = this.rng() * total;
+    const pick = c.find((x) => (r -= x.w) <= 0) || c[0];
     return { kind: 'node', id: pick.n.id };
   }
   valid(m) {
@@ -274,8 +285,8 @@ class StickBot {
       field = w.hubField;
       let best = Infinity;
       for (const i of w.workshop) {
-        const x = i % 9;
-        const y = Math.floor(i / 9);
+        const x = i % W;
+        const y = Math.floor(i / W);
         const d = Math.hypot(x - p.fx, y - p.fy);
         if (d < best) [best, tx, ty] = [d, x, y];
       }
@@ -343,7 +354,7 @@ const probe = new Match({ ...matchConfig(LEVELS[0]), model: new PlayerModel() })
 const HAS_OPTIONS = probe.orders.map((o) => o.id).join() === LEVELS[0].options.orders.join();
 const HAS_SCORE = typeof probe.score === 'number';
 
-// One match; returns the summary plus the score split by reason and the won orders' [tier, seconds].
+// One match; returns the summary plus the score split by reason and the won orders' [tier, seconds, index].
 function play(level, driver, model) {
   const cfg = matchConfig(level);
   const m = new Match({ seed: cfg.seed, rival: cfg.rival, twist: cfg.twist, options: cfg.options, model });
@@ -360,7 +371,7 @@ function play(level, driver, model) {
     events = m.drainEvents();
     for (const e of events) {
       if (e.type === 'go') go = e.t;
-      else if (e.type === 'complete' && e.who === 'player') won.push([e.item.tier, +(e.t - go).toFixed(3)]);
+      else if (e.type === 'complete' && e.who === 'player') won.push([e.item.tier, +(e.t - go).toFixed(3), m.orderIndex]);
       else if (e.type === 'score') {
         const q = (parts[e.reason] ||= { n: 0, pts: 0 });
         q.n++;
@@ -374,23 +385,21 @@ function play(level, driver, model) {
   return { s, race, seconds: t, parts, won };
 }
 
-// The best score a win can reach with no speed bonus, no outread and no fake-out: every order the
-// match can play fully gathered and crafted (the lost ones too), plus the match win, plus flawless only
-// when the goal demands it. Three stars must take more than that.
+// The best score a win can reach without a speed bonus, an outread or a fake-out: every order the match
+// can play (2 * starsToWin - 1) fully gathered and crafted, plus flawless only when the goal demands it.
+// Three stars must take more than that (tools/test-meta.mjs checks the same rule).
 function ordinaryWin(level) {
   const stw = level.options.starsToWin;
-  const orders = level.options.orders.slice(0, 2 * stw - 1).map((id) => ITEM_BY_ID[id]);
-  let pts = SCORE.matchWin + stw * SCORE.order + (level.goal.type === 'flawless' ? SCORE.flawless : 0);
-  for (const it of level.goal.type === 'flawless' ? orders.slice(0, stw) : orders) {
-    pts += it.parts.length * SCORE.craft;
-    for (const part of it.parts) pts += COMPONENTS[part].needs.length * SCORE.gather;
-  }
+  const flawless = level.goal.type === 'flawless';
+  const orders = level.options.orders.slice(0, flawless ? stw : 2 * stw - 1).map((id) => ITEM_BY_ID[id]);
+  let pts = SCORE.matchWin + stw * SCORE.order + (flawless ? SCORE.flawless : 0);
+  for (const it of orders) for (const part of it.parts) pts += SCORE.craft + COMPONENTS[part].needs.length * SCORE.gather;
   return pts;
 }
 
 // ------------------------------------------------------------ run the players
-const levels = LEVELS.filter((l) => l.id >= from && l.id <= to);
-const blank = () => ({ tries: 0, wins: 0, passes: 0, first: 0, timeUps: 0, stuck: 0, players: 0, scores: [], race: [] });
+const levels = LEVELS.filter((l) => PICK.has(l.id));
+const blank = () => ({ tries: 0, wins: 0, passes: 0, first: 0, timeUps: 0, stuck: 0, players: 0, scores: [], race: [], plays: [] });
 const stats = new Map(levels.map((l) => [l.id, Object.fromEntries(GROUPS.map((g) => [g, blank()]))]));
 const dump = [];
 
@@ -414,6 +423,7 @@ for (let p = 0; p < N; p++) {
   let coinAt = null;
   let gemAt = null;
   for (const level of levels) {
+    if (WARM && !PICK.has(level.id - 1)) for (const w of LEVELS.slice(Math.max(0, level.id - 1 - WARM), level.id - 1)) play(w, driver, model);
     const st = stats.get(level.id)[group];
     st.players++;
     let passed = false;
@@ -443,6 +453,8 @@ for (let p = 0; p < N; p++) {
         st.first += tri === 0 ? 1 : 0;
         st.scores.push(s.score);
         st.race.push(race);
+        const n = (r) => parts[r]?.n || 0;
+        st.plays.push({ score: s.score, speed: parts.speed?.pts || 0, reads: n('outread') + n('fooled'), flawless: n('flawless'), rivalStars: s.stars.rival });
         if (JSON_OUT) dump.push({ level: level.id, group, player: p, tri, score: s.score, rivalStars: s.stars.rival, timeUp: s.timeUp, race: +race.toFixed(2), parts, won });
       }
     }
@@ -463,38 +475,60 @@ const quant = (arr, q) => {
   const a = arr.slice().sort((x, y) => x - y);
   const i = (a.length - 1) * q;
   const lo = Math.floor(i);
-  return a[lo] + (a[Math.min(a.length - 1, lo + 1)] - a[lo]) * (i - lo);
+  const [v, w] = [a[lo], a[Math.min(a.length - 1, lo + 1)]];
+  return v === w ? v : v + (w - v) * (i - lo); // (Infinity = never, in the economy projection)
 };
 const r50 = (x) => Math.round(x / 50) * 50;
 const up50 = (x) => Math.ceil(x / 50) * 50;
 const minGap = (two) => Math.max(400, two * 0.1); // the third star stays a clearly separate goal
 const share = (scores, x) => scores.filter((v) => v >= x).length / (scores.length || 1);
+
+// Suggested [two, three] from the calibration group's passing scores: two ~ median; three = the multiple
+// of 50 whose share of passes is closest to 20% (~ 80th percentile), but at least minGap above two and
+// above an ordinary win. Where scores bunch up (short races, flawless goals) that gap would push three
+// past nearly every pass, so two steps down: first while at most 65% of passes reach it, until 15% reach
+// three; then, only if needed to keep the third star within reach of fast play, until 12% do.
+function suggest(level, scores) {
+  const ord = up50(ordinaryWin(level) + 1);
+  const threeFor = (two) => {
+    let t = Math.max(up50(two + minGap(two)), ord);
+    while (share(scores, t + 50) >= 0.2) t += 50;
+    return share(scores, t) - 0.2 > 0.2 - share(scores, t + 50) ? t + 50 : t;
+  };
+  let two = r50(quant(scores, 0.5));
+  let three = threeFor(two);
+  for (const [cap2, min3] of [[0.65, 0.15], [1, 0.12]]) {
+    while (share(scores, three) < min3 && two > 50 && share(scores, two - 50) <= cap2) {
+      two -= 50;
+      three = threeFor(two);
+    }
+  }
+  return [two, three];
+}
 const others = GROUPS.filter((g) => g !== CAL);
 
-console.log(`OUTCRAFT Adventure calibration: ${N} players (${POPS[POP] || POP}), levels ${from}-${to}, up to ${MAX_TRIES} tries per level (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
+console.log(`OUTCRAFT Adventure calibration: ${N} players (${POPS[POP] || POP}), ${levels.length} levels${WARM ? ` (warm-up ${WARM})` : ''}, up to ${MAX_TRIES} tries per level (${((Date.now() - t0) / 1000).toFixed(1)} s)`);
 if (!HAS_OPTIONS || !HAS_SCORE) {
   console.log('WARNING: src/match.js does not support level options and/or score yet.');
   console.log(`         options (orders/starsToWin/timeLimit): ${HAS_OPTIONS ? 'yes' : 'NO'}   score: ${HAS_SCORE ? 'yes' : 'NO'}`);
   console.log('         Results below use the default orders and 3 stars; thresholds stay provisional.');
 }
 console.log(`\nCalibration group: ${CAL} (${stats.get(levels[0].id)[CAL].players} players). Pass = per attempt; 2*/3* = share of passes. Other groups: pass per attempt.`);
-console.log(`  #  level                  rival  twist      goal      time tUp | win  pass 1st  tries | p50  p80 score | 2*   3*  (now two/three) | suggest two/three | ${others.map((g) => g.slice(0, 7).padStart(7)).join(' ')} | race s`);
+console.log(`  #  level                  rival  twist      goal      time tUp | win  pass 1st  tries | score p50  p80 | 2*   3*  (now two/three) | suggest two/three | ${others.map((g) => g.slice(0, 7).padStart(7)).join(' ')} | race s`);
 const suggested = new Map();
 for (const level of levels) {
   const st = stats.get(level.id)[CAL];
   const [, two, three] = level.thresholds;
   const med = quant(st.scores, 0.5);
   const p80 = quant(st.scores, 0.8);
-  let sTwo = r50(med);
-  let sThree = Math.max(up50(sTwo + minGap(sTwo)), r50(p80), up50(ordinaryWin(level) + 1));
-  if (!st.scores.length) [sTwo, sThree] = [two, three];
+  const [sTwo, sThree] = st.scores.length ? suggest(level, st.scores) : [two, three];
   suggested.set(level.id, [sTwo, sThree]);
   const tag = level.boss ? 'B' : level.hard ? 'H' : ' ';
   const n = st.players || 1;
   console.log(
     `${String(level.id).padStart(3)}${tag} ${level.name.padEnd(22).slice(0, 22)} ${level.rival.padEnd(6)} ${(level.twist?.id || '-').padEnd(10)} ${level.goal.type.padEnd(9)} ${String(level.options.timeLimit || '-').padStart(4)} ${level.options.timeLimit ? pct(st.timeUps / (st.tries || 1)) : '   -'} |` +
       ` ${pct(st.wins / (st.tries || 1))} ${pct(st.passes / (st.tries || 1))} ${pct(st.first / n)} ${(st.tries / n).toFixed(1).padStart(4)}${st.stuck ? '!' : ' '} |` +
-      ` ${String(Math.round(med)).padStart(4)} ${String(Math.round(p80)).padStart(4)}      | ${pct(share(st.scores, two))} ${pct(share(st.scores, three))} (${two}/${three}) | ${String(sTwo).padStart(6)}/${String(sThree).padEnd(6)} |` +
+      `      ${String(Math.round(med)).padStart(4)} ${String(Math.round(p80)).padStart(4)} | ${pct(share(st.scores, two))} ${pct(share(st.scores, three))} (${two}/${three}) | ${String(sTwo).padStart(6)}/${String(sThree).padEnd(6)} |` +
       ` ${others.map((g) => pct(stats.get(level.id)[g].passes / (stats.get(level.id)[g].tries || 1)).padStart(7)).join(' ')} | ${quant(st.race, 0.5).toFixed(0).padStart(3)} (p90 ${quant(st.race, 0.9).toFixed(0)})`,
   );
   if (level.index === 9) console.log('');
@@ -517,6 +551,17 @@ for (const w of WORLDS) {
   console.log(`  ${w.number} ${w.name.padEnd(16)} ${cells.join(' ')}`);
 }
 console.log(`  (columns per group: pass, first try, 2*, 3*)`);
+
+// What the stars took: the calibration group's passes split by stars earned (current thresholds).
+console.log(`\nWhat each star band took (${CAL}, current thresholds): share of passes, mean score, speed bonus, outreads + fake-outs, flawless, rival stars`);
+const bands = [[], [], [], []];
+for (const level of levels) for (const x of stats.get(level.id)[CAL].plays) bands[1 + (x.score >= level.thresholds[1]) + (x.score >= level.thresholds[2])].push(x);
+const nPlays = bands.reduce((s, b) => s + b.length, 0) || 1;
+const mean = (b, f) => b.reduce((s, x) => s + f(x), 0) / (b.length || 1);
+for (const k of [1, 2, 3]) {
+  const b = bands[k];
+  console.log(`  ${k} star${k > 1 ? 's' : ' '} ${pct(b.length / nPlays)}  score ${Math.round(mean(b, (x) => x.score))}  speed ${Math.round(mean(b, (x) => x.speed))}  reads ${mean(b, (x) => x.reads).toFixed(2)}  flawless ${pct(mean(b, (x) => x.flawless))}  rival stars ${mean(b, (x) => x.rivalStars).toFixed(2)}`);
+}
 
 console.log('\nSuggested THRESHOLDS (paste into src/levels.js):');
 const rows = [];

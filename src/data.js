@@ -157,16 +157,19 @@ export const STARS_TO_WIN = 3;
 // level in levels.js sets the score needed for 2 and 3 stars (winning the match earns the first star).
 // An order won faster than parSeconds[tier] (measured from GO to the item completing) earns
 // perSecondUnderPar points for every second saved. Only the player scores; the rival never does.
+// Weights: every win banks the same order + matchWin base, so what separates an ordinary win from an
+// excellent one is beating par (par ~ a typical winning pace), outreads, fake-outs and a flawless match;
+// gather and craft stay small, so crafting in orders you go on to lose adds little.
 export const SCORE = {
   gather: 10,
-  craft: 60,
+  craft: 20,
   order: 500,
-  parSeconds: [0, 14, 17, 20, 23, 27],
-  perSecondUnderPar: 30,
-  outread: 150,
-  fooled: 250,
+  parSeconds: [0, 10, 12, 14, 16, 18],
+  perSecondUnderPar: 100,
+  outread: 200,
+  fooled: 500,
   matchWin: 1000,
-  flawless: 500,
+  flawless: 1500,
 };
 
 // Daily Commission twists: the same island, orders and twist for every player on a given date.

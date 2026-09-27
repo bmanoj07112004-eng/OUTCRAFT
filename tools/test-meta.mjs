@@ -5,7 +5,7 @@ import * as eco from '../src/economy.js';
 import { fresh, load, save, migrate, recordMatch, codexCount } from '../src/storage.js';
 import { Match } from '../src/match.js';
 import { PlayerModel, HABIT_IDS } from '../src/model.js';
-import { RIVALS, ITEMS, ITEM_BY_ID, STARS_TO_WIN } from '../src/data.js';
+import { RIVALS, ITEMS, ITEM_BY_ID, STARS_TO_WIN, SCORE, COMPONENTS } from '../src/data.js';
 import { THEMES } from '../src/3d/themes.js';
 import { SKINS, SKIN_BY_ID } from '../src/skins.js';
 import { idx } from '../src/world.js';
@@ -159,6 +159,27 @@ test('matchConfig: builds a Match that runs to the end with the level settings',
       assert.deepEqual(m.orders.map((o) => o.id), level.options.orders);
       if (!s.timeUp) assert.equal(Math.max(s.stars.player, s.stars.rival), level.options.starsToWin);
     }
+  }
+});
+
+// The best score a win can reach without a speed bonus, an outread or a fake-out: every order the match
+// can play (2 * starsToWin - 1) fully gathered and crafted, plus flawless only when the goal demands it.
+function ordinaryWin(level) {
+  const stw = level.options.starsToWin;
+  const flawless = level.goal.type === 'flawless';
+  const orders = level.options.orders.slice(0, flawless ? stw : 2 * stw - 1).map((id) => ITEM_BY_ID[id]);
+  let pts = SCORE.matchWin + stw * SCORE.order + (flawless ? SCORE.flawless : 0);
+  for (const it of orders) for (const part of it.parts) pts += SCORE.craft + COMPONENTS[part].needs.length * SCORE.gather;
+  return pts;
+}
+
+test('thresholds: round, ascending, 3 stars a clear step above 2 stars and out of reach of an ordinary win', () => {
+  for (const l of LEVELS) {
+    const [z, two, three] = l.thresholds;
+    assert.equal(z, 0);
+    assert.ok(two > 0 && two % 50 === 0 && three % 50 === 0, `level ${l.id} thresholds ${l.thresholds} not multiples of 50`);
+    assert.ok(three >= two + Math.max(400, two * 0.1), `level ${l.id}: three ${three} must be at least max(400, 10%) above two ${two}`);
+    assert.ok(three > ordinaryWin(l), `level ${l.id}: three ${three} is reachable by an ordinary win (${ordinaryWin(l)})`);
   }
 });
 
