@@ -36,6 +36,7 @@ const CARRY_SCALE = 1.3;
 const SHADOW_SIZE = 0.95; // blob shadow diameter
 
 const STATES = new Set(['idle', 'walk', 'wait', 'gather', 'deposit', 'think']);
+const NO_PARAMS = Object.freeze({});
 const EMOTES = new Set(['hop', 'sad', 'cheer', 'wave']);
 const SCOOP_RES = new Set(['sand', 'fiber']);
 
@@ -207,7 +208,7 @@ const ball = (w = 10, h = 7) => new THREE.SphereGeometry(1, w, h);
 const sphere = (r, w = 12, h = 8) => new THREE.SphereGeometry(r, w, h);
 const cyl = (rt, rb, h, seg = 12, open = false) => new THREE.CylinderGeometry(rt, rb, h, seg, 1, open);
 const capsule = (r, len, seg = 10) => new THREE.CapsuleGeometry(r, len, 3, seg);
-const cone = (r, h, seg = 12) => new THREE.ConeGeometry(r, h, seg);
+const cone = (r, h, seg = 12, hseg = 1) => new THREE.ConeGeometry(r, h, seg, hseg);
 const torus = (R, r, rs = 6, ts = 20, arc = TAU) => new THREE.TorusGeometry(R, r, rs, ts, arc);
 const lathe = (pts, seg = 18) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg);
 
@@ -422,6 +423,7 @@ function baseLook(key, kind) {
     belt: true,
     robe: false,
     torsoScale: 1,
+    villager: false,
   };
 }
 
@@ -889,17 +891,18 @@ function buildHat(k, hk, L, accs) {
     case 'horns': {
       hk.add(new THREE.SphereGeometry(0.462, 20, 8, 0, TAU, 0, 1.28), '#aab2bf', null, 'metal');
       hk.add(torus(0.448, 0.036, 5, 26), c.body, { p: [0, 0.13, 0], r: [Math.PI / 2, 0, 0] });
-      hk.add(rbox(0.07, 0.3, 0.05, 0.02, 2), c.body, { p: [0, 0.34, 0.24], r: [-0.62, 0, 0] });
+      hk.add(torus(0.466, 0.03, 5, 18, Math.PI), c.body, { r: [0, Math.PI / 2, 0] });
       for (const s of SIDES) {
-        const g = cone(0.078, 0.36, 12);
+        const g = cone(0.078, 0.36, 10, 5);
         g.translate(0, 0.18, 0);
         bend(g, -s * 1.05);
         hk.add(g, c.accent, { p: [s * 0.36, 0.2, 0.02], r: [0, 0, -s * 1.12] });
       }
-      // braids and a chin-strap beard below the mouth
-      k.add(ball(), c.hair, { ...surf(0, -0.74, -0.035), s: [0.3, 0.13, 0.075] });
-      k.add(capsule(0.03, 0.06, 6), c.hair, { p: [0, HEAD_C - 0.44, 0.27], r: [0.35, 0, 0] });
-      k.add(sphere(0.022, 8, 6), c.accent, { p: [0, HEAD_C - 0.5, 0.29] });
+      // a full beard hugging the jaw below the mouth, with a braided tip
+      hk.add(new THREE.SphereGeometry(0.455, 20, 6, Math.PI / 2 - 1.35, 2.7, Math.PI / 2 + 0.42, 0.9), c.hair);
+      k.add(ball(), c.hair, { ...surf(0, -0.78, 0.0), s: [0.2, 0.12, 0.12] });
+      k.add(capsule(0.032, 0.07, 6), c.hair, { p: [0, HEAD_C - 0.47, 0.27], r: [0.45, 0, 0] });
+      k.add(sphere(0.024, 8, 6), c.accent, { p: [0, HEAD_C - 0.53, 0.3] });
       for (const s of SIDES) {
         for (let i = 0; i < 3; i++) k.add(sphere(0.036 - i * 0.004, 8, 6), c.hair, { p: [s * 0.4, HEAD_C - 0.22 - i * 0.065, 0.1] });
         k.add(sphere(0.022, 8, 6), c.accent, { p: [s * 0.4, HEAD_C - 0.43, 0.1] });
@@ -942,22 +945,28 @@ function buildHat(k, hk, L, accs) {
       const top = accKit(accs, 'head', [0, HEAD_C + 0.2 * HS[1], 0], 'sway');
       const f = top.frame({ p: [0, HEAD_C, 0], s: HS });
       f.add(cyl(0.6, 0.6, 0.035, 26), shade(hatCol, 0.1), { p: [0, 0.2, 0] });
-      f.add(torus(0.415, 0.035, 6, 26), c.accent, { p: [0, 0.25, 0], r: [Math.PI / 2, 0, 0] });
+      f.add(torus(0.455, 0.035, 6, 26), c.accent, { p: [0, 0.25, 0], r: [Math.PI / 2, 0, 0] });
       const H = 0.8;
+      const BASE = 0.47; // roomy, so the hair never pokes through while the hat sways
       const BEND = -0.85;
-      const g = cone(0.43, H, 18);
+      const g = cone(BASE, H, 18, 6);
       g.translate(0, H / 2, 0);
       bend(g, BEND, 'z');
       f.add(g, hatCol, { p: [0, 0.2, 0] });
       const R = H / BEND;
+      const slope = Math.atan(BASE / H);
       for (const [t, a, sc] of [[0.16, 0.4, 1], [0.32, -0.5, 0.8], [0.08, -1.5, 0.75], [0.44, 1.0, 0.6], [0.12, 1.9, 0.7]]) {
-        // a point on the straight cone, then the same bend as the geometry
-        const rr = 0.43 * (1 - t / H) + 0.008;
-        const z0 = Math.cos(a) * rr;
+        // a point and normal on the straight cone, then the same bend as the geometry
+        const rr = BASE * (1 - t / H) + 0.006;
         const ang = t / R;
-        const rad = R - z0;
+        const rad = R - Math.cos(a) * rr;
         const p = [Math.sin(a) * rr, 0.2 + rad * Math.sin(ang), R - rad * Math.cos(ang)];
-        f.add(starGeo(0.05 * sc, 0.022 * sc, 0.012), glow || c.accent, { p, r: [0, a, 0] }, glow ? 'glow' : 'matte');
+        const ny = Math.sin(slope);
+        const nz = Math.cos(a) * Math.cos(slope);
+        const ny2 = ny * Math.cos(ang) - nz * Math.sin(ang);
+        const nz2 = ny * Math.sin(ang) + nz * Math.cos(ang);
+        const r = [-Math.asin(clamp(ny2, -1, 1)), Math.atan2(Math.sin(a) * Math.cos(slope), nz2), 0];
+        f.add(starGeo(0.05 * sc, 0.022 * sc, 0.012), glow || c.accent, { p, r, o: 'YXZ' }, glow ? 'glow' : 'matte');
       }
       // long white beard and moustache
       k.add(ball(), c.hair, { ...surf(0, -0.62, -0.06), s: [0.26, 0.2, 0.16] });
@@ -1487,7 +1496,7 @@ export class Character {
     this._apply(this.pose);
   }
 
-  update(dt, o = {}) {
+  update(dt, o = NO_PARAMS) {
     if (this.disposed || !this.rig) return;
     dt = dt > 0 ? Math.min(dt, 0.1) : 0;
     this.t += dt;
@@ -1636,16 +1645,16 @@ export class Character {
     if (cyc < 0.3) a = 0.3 * (1 - easeInOut(cyc / 0.3));
     else if (cyc < 0.5) a = ((cyc - 0.3) / 0.2) ** 2;
     else a = 1 - 0.7 * easeInOut((cyc - 0.5) / 0.5);
-    const hit = cyc >= 0.46 && cyc < 0.62 ? 1 - Math.abs(cyc - 0.5) / 0.12 : 0;
+    const hit = Math.max(0, 1 - Math.abs(cyc - 0.52) / 0.12); // impact squash around the hit
     q.twist = -0.85 + a * 1.25;
     q.alx = q.arx = -1.3;
     q.alz = q.arz = -0.3;
-    q.lean = 0.12 + Math.max(0, hit) * 0.12;
+    q.lean = 0.12 + hit * 0.12;
     q.hx = -0.04;
     q.hy = -q.twist * 0.7;
     q.roll = 0;
-    q.sq = 1 - Math.max(0, hit) * 0.05;
-    q.ty = -0.02 - Math.max(0, hit) * 0.02;
+    q.sq = 1 - hit * 0.05;
+    q.ty = -0.02 - hit * 0.02;
   }
 
   _deposit(q) {
@@ -2039,6 +2048,7 @@ export class Preview {
     this.table.add(base, rim);
 
     this.character = null;
+    this._params = { x: 0, z: 0, heading: 0, moving: 0, state: 'idle', emote: null };
     this.angle = 0.45;
     this.vel = 0.55;
     this._hop = 0;
@@ -2077,14 +2087,17 @@ export class Preview {
     if (!character) return;
     character.group.removeFromParent();
     this.table.add(character.group);
-    character.update(0, { x: 0, z: 0, heading: 0, moving: 0, state: 'idle' });
+    this._params.emote = null;
+    character.update(0, this._params);
     this._hop = 0.55;
   }
 
+  // Matches the drawing buffer to the canvas' CSS size. False while the canvas is hidden.
   _resize() {
-    const w = this.canvas.clientWidth || this.canvas.width || 1;
-    const h = this.canvas.clientHeight || this.canvas.height || 1;
-    if (w === this._w && h === this._h) return;
+    const w = this.canvas.clientWidth;
+    const h = this.canvas.clientHeight;
+    if (!w || !h) return false;
+    if (w === this._w && h === this._h) return true;
     this._w = w;
     this._h = h;
     this.renderer.setSize(w, h, false);
@@ -2096,12 +2109,13 @@ export class Preview {
     cam.position.set(0, 0.95 + dist * 0.13, dist);
     cam.lookAt(0, 0.92, 0);
     cam.updateProjectionMatrix();
+    return true;
   }
 
   update(dt) {
     if (!this.renderer) return;
     dt = dt > 0 ? Math.min(dt, 0.1) : 0;
-    this._resize();
+    if (!this._resize()) return;
     if (!this._drag) {
       this.vel += (0.55 - this.vel) * damp(1.8, dt);
       this.angle += this.vel * dt;
@@ -2109,7 +2123,8 @@ export class Preview {
     this.table.rotation.y = this.angle;
     if (this.character) {
       this._hop -= dt;
-      this.character.update(dt, { x: 0, z: 0, heading: 0, moving: 0, state: 'idle', emote: this._hop > 0 ? 'hop' : null });
+      this._params.emote = this._hop > 0 ? 'hop' : null;
+      this.character.update(dt, this._params);
     }
     this.renderer.render(this.scene, this.camera);
   }
@@ -2125,8 +2140,8 @@ export class Preview {
     this.character = null;
     for (const x of this._own) x.dispose();
     this._own = [];
+    // no forceContextLoss(): a new Preview may be created on the same canvas later
     this.renderer.dispose();
-    this.renderer.forceContextLoss();
     this.renderer = null;
   }
 }
