@@ -281,6 +281,11 @@
           });
         }
 
+        // for --eval tweaks in frozen mode: window.__render() draws again
+        window.__render = () => {
+          renderer.render(scene, camera);
+          labels();
+        };
         const freeze = P.has('t') ? num('t', 0) : null;
         if (freeze !== null) {
           for (let t = 0; t < freeze; t += 1 / 60) step(1 / 60);

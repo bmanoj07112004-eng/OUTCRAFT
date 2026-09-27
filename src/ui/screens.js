@@ -171,8 +171,13 @@ function priceHTML(price) {
 // ------------------------------------------------------------------ hooks, dispatch, visibility
 
 const hooks = { sound: () => {}, onAction: null };
+// Per section: `own` handlers defined by this module (checked first), then the caller's callbacks.
 const handlers = Object.create(null);
 let wired = false;
+
+function on(section, cb = {}, own = {}) {
+  handlers[section] = { cb: cb || {}, own };
+}
 
 /**
  * Call once at boot.
@@ -199,8 +204,11 @@ function play(name, ...args) {
 }
 
 function callbackFor(hostId, act) {
-  const cb = handlers[hostId];
-  return cb && cb['on' + cap1(act)];
+  const h = handlers[hostId];
+  if (!h) return null;
+  const name = 'on' + cap1(act);
+  const fn = h.own[name] || h.cb[name];
+  return typeof fn === 'function' ? fn : null;
 }
 
 function wire() {
@@ -338,7 +346,7 @@ export function confirmDialog({ title = 'Are you sure?', text = '', ok = 'OK', c
   okBtn.textContent = ok;
   okBtn.className = `btn ${danger ? 'btn-red' : 'btn-green'}`;
   $('confirm-cancel').textContent = cancel;
-  handlers['modal-confirm'] = {
+  on('modal-confirm', {}, {
     onOk: () => {
       const r = confirmResolve;
       confirmResolve = null;
@@ -346,7 +354,7 @@ export function confirmDialog({ title = 'Are you sure?', text = '', ok = 'OK', c
       if (r) r(true);
     },
     onCancel: () => closeModal('confirm'),
-  };
+  });
   openModal('confirm');
   return new Promise((res) => (confirmResolve = res));
 }
@@ -377,7 +385,7 @@ function setText(id, text) {
  * @param {object} [cb]  onHearts(), onCoins(), onGems() (e.g. open the shop on the right tab)
  */
 export function renderTopBar(vm, cb = {}) {
-  handlers.topbar = cb;
+  on('topbar', cb);
   for (const k of ['coins', 'gems', 'hearts']) {
     const v = Math.max(0, Math.floor(+vm[k] || 0));
     if (tbLast[k] === v) continue;
@@ -425,7 +433,7 @@ export function showNoWebGL(reason = '') {
  *                     onSettings, onHow, onAbout
  */
 export function renderTitle(vm, cb = {}) {
-  handlers['screen-title'] = cb;
+  on('screen-title', cb);
   setText('title-level', `Level ${vm.level || 1}${vm.levelName ? ` · ${vm.levelName}` : ''}`);
   setText('title-daily-sub', vm.dailySub || '');
   setText('title-quick-sub', vm.quickSub || '');
@@ -505,8 +513,7 @@ export function renderMap(vm, cb = {}) {
     if (cb.onLocked) cb.onLocked(id);
     else toast(`Level ${id} is locked. Beat level ${id - 1} first!`);
   };
-  handlers['screen-map'] = {
-    onBack: cb.onBack,
+  on('screen-map', cb, {
     onJump: () => scrollToLevel(vm.current, true),
     onLevel: (arg) => {
       const id = +arg;
@@ -514,7 +521,7 @@ export function renderMap(vm, cb = {}) {
       if (!l || l.state === 'locked') return locked(id);
       if (cb.onLevel) cb.onLevel(id);
     },
-  };
+  });
   setText('map-stars', `${fmt(vm.stars || 0)}/${fmt(vm.maxStars || vm.levels.length * 3)}`);
 
   const worlds = vm.worlds && vm.worlds.length ? vm.worlds : [{ name: 'Adventure' }];
@@ -748,7 +755,7 @@ export function renderLevelPopup(vm, cb = {}) {
       <span class="lp-heart">${svgIcon('heart')}<b>${noHearts ? esc(vm.heartsText || '') : '1'}</b></span>
     </button>
     <p class="lp-fine">Hearts are only lost if you fail or quit.</p>`;
-  handlers['modal-level'] = {
+  on('modal-level', cb, {
     onClose: () => {
       closeModal('level');
       if (cb.onClose) cb.onClose();
@@ -778,7 +785,7 @@ export function renderLevelPopup(vm, cb = {}) {
       }
       if (cb.onPlay) cb.onPlay([...popupSel.set]);
     },
-  };
+  });
   openModal('level');
 }
 
@@ -935,7 +942,7 @@ export function renderLevelResult(vm, cb = {}) {
     later(200, () => play('fail'));
     if (vm.heartLost) later(700, () => play('heart'));
   }
-  handlers['modal-result'] = { onNext: cb.onNext, onReplay: cb.onReplay, onMap: cb.onMap, onRetry: cb.onRetry };
+  on('modal-result', cb);
   openModal('result');
 }
 
@@ -965,7 +972,7 @@ export function renderLevelResult(vm, cb = {}) {
  * @param {object} cb  onAgain(), onNext(), onShare(), onCodex(), onMenu()
  */
 export function renderResults(vm, cb = {}) {
-  handlers['screen-results'] = cb;
+  on('screen-results', cb);
   const r = vm.rival;
   const col = esc(r.color);
   $('res-title').innerHTML = vm.win ? `YOU OUT-CRAFTED<br><span style="color:${col}">${esc(r.name)}</span>` : `<span style="color:${col}">${esc(r.name)}</span> OUT-CRAFTED YOU`;
@@ -1027,8 +1034,7 @@ export function renderRivals(vm, cb = {}) {
       .join('');
     setText('btn-race-t', `RACE ${vm.rivals[rivalSel]?.name || ''}`);
   };
-  handlers['screen-rivals'] = {
-    onBack: cb.onBack,
+  on('screen-rivals', cb, {
     onPick: (arg) => {
       const i = +arg;
       if (vm.rivals[i]?.locked) {
@@ -1041,7 +1047,7 @@ export function renderRivals(vm, cb = {}) {
       if (cb.onSelect) cb.onSelect(i);
     },
     onRace: () => cb.onRace && cb.onRace(rivalSel),
-  };
+  });
   draw();
 }
 
@@ -1122,8 +1128,7 @@ export function renderShop(vm, cb = {}) {
     )
     .join('');
 
-  handlers['screen-shop'] = {
-    onBack: cb.onBack,
+  on('screen-shop', cb, {
     onTab: (tab) => {
       shopTab = tab;
       renderShop({ ...vm, tab }, cb);
@@ -1151,7 +1156,7 @@ export function renderShop(vm, cb = {}) {
       }
       if (cb.onRefill) cb.onRefill();
     },
-  };
+  });
 }
 
 /** The canvas the 3D skin Preview should render into (always the same element). */
@@ -1191,13 +1196,12 @@ export function renderDailyReward(vm, cb = {}) {
     <p class="dr-sub">Come back every day. Day 7 is special!</p>
     <div class="dr-grid">${tiles}</div>
     ${vm.canClaim ? `<button class="btn btn-green btn-xl" data-act="claim"><span class="btn-main">CLAIM DAY ${vm.day}</span></button>` : `<div class="dr-next">${svgIcon('clock', 'dr-clock')} Next reward in <b>${esc(vm.nextText || 'tomorrow')}</b></div>`}`;
-  handlers['modal-daily'] = {
+  on('modal-daily', cb, {
     onClose: () => {
       closeModal('daily');
       if (cb.onClose) cb.onClose();
     },
-    onClaim: () => cb.onClaim && cb.onClaim(),
-  };
+  });
   openModal('daily');
 }
 
@@ -1211,7 +1215,7 @@ export function renderDailyReward(vm, cb = {}) {
  * @param {object} cb  onClaim(id), onBack()
  */
 export function renderAchievements(vm, cb = {}) {
-  handlers['screen-achievements'] = cb;
+  on('screen-achievements', cb);
   const list = vm.list || [];
   const ready = list.filter((a) => a.done && !a.claimed).length;
   setText('ach-summary', ready ? `${ready} ready to claim!` : `${list.filter((a) => a.claimed).length}/${list.length} done`);
@@ -1247,13 +1251,12 @@ export function renderAchievements(vm, cb = {}) {
  *                     autoReturn|glass; onReset(); onHow(); onAbout(); onBack()
  */
 export function renderSettings(vm, cb = {}) {
-  handlers['screen-settings'] = {
-    ...cb,
+  on('screen-settings', cb, {
     onQuality: (q) => {
       for (const b of document.querySelectorAll('#set-quality button')) b.classList.toggle('on', b.dataset.arg === q);
       if (cb.onChange) cb.onChange('quality', q);
     },
-  };
+  });
   for (const b of document.querySelectorAll('#set-quality button')) b.classList.toggle('on', b.dataset.arg === vm.quality);
   for (const k of ['sound', 'music', 'invertY', 'autoReturn', 'glass']) {
     const el = document.querySelector(`#screen-settings [data-set="${k}"]`);
@@ -1277,7 +1280,7 @@ export function renderSettings(vm, cb = {}) {
  * @param {object} cb  onBack(), onForget()
  */
 export function renderCodex(vm, cb = {}) {
-  handlers['screen-codex'] = cb;
+  on('screen-codex', cb);
   const items = vm.items || [];
   setText('codex-count', `${items.filter((i) => i.got).length}/${items.length}`);
   $('codex-grid').innerHTML = items
@@ -1307,22 +1310,21 @@ export function renderPause(vm, cb = {}) {
   setText('pause-quit-t', vm.quitText || 'QUIT');
   const g = $('pause-glass');
   g.checked = !!vm.glass;
-  handlers['modal-pause'] = {
-    ...cb,
+  on('modal-pause', cb, {
     onChange: (key, value) => key === 'glass' && cb.onGlass && cb.onGlass(value),
-  };
+  });
   openModal('pause');
 }
 
 /** How to play. @param {{okText?: string}} vm  cb: onOk() */
 export function renderHow(vm = {}, cb = {}) {
-  handlers['screen-how'] = cb;
+  on('screen-how', cb);
   setText('how-ok-t', vm.okText || 'GOT IT');
 }
 
 /** About. @param {{completed?: string, author?: string, docsHref?: string}} vm  cb: onBack() */
 export function renderAbout(vm = {}, cb = {}) {
-  handlers['screen-about'] = cb;
+  on('screen-about', cb);
   if (vm.completed) setText('about-done', vm.completed);
   if (vm.author) setText('about-author', vm.author);
   if (vm.docsHref) $('about-doc').href = vm.docsHref;
@@ -1330,5 +1332,5 @@ export function renderAbout(vm = {}, cb = {}) {
 
 /** Wire the static sections that need no view model (loading, no-WebGL). cb: onClassic() */
 export function renderStatic(cb = {}) {
-  handlers['screen-nogl'] = cb;
+  on('screen-nogl', cb);
 }

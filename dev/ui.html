@@ -489,7 +489,8 @@
             hud.setStars(1, 1);
             hud.setScore(2450);
             hud.setTimer(67);
-            hud.setBag(['sand', 'wood'], 3);
+            const bag4 = params.get('bag') === '4';
+            hud.setBag(bag4 ? ['sand', 'wood', 'ore'] : ['sand', 'wood'], bag4 ? 4 : 3);
             hud.setHint('Still need: Ore, Wood');
             hud.setInteract('gather', 'ore');
             const world = generateIsland(1103);

@@ -860,6 +860,8 @@ export class Island3D {
     tile.translate(0, -0.41, 0);
     const soil = new THREE.Color(theme.ground.cliff);
     const soilDark = new THREE.Color(theme.ground.cliffDark);
+    // On the lava world the tile sides glow like magma, so the gaps between tiles shine.
+    const magma = theme.sea.kind === 'lava' ? new THREE.Color(theme.sea.color) : null;
     const [ga, gb] = theme.ground.top;
     for (let y = 0; y < H; y++) {
       for (let x = 0; x < W; x++) {
@@ -868,9 +870,17 @@ export class Island3D {
         kit.add(tile, top, {
           p: [tileX(x), GROUND_Y, tileZ(y)],
           vc: (vx, vy, vz, c) => {
-            if (vy > -0.005) return;
-            if (vy > -0.1) c.multiplyScalar(0.9);
-            else c.lerpColors(soil, soilDark, clamp01((-vy - 0.1) / 0.35));
+            if (vy > -0.005) return 0;
+            if (vy > -0.1) {
+              c.multiplyScalar(0.9);
+              return 0;
+            }
+            if (magma) {
+              c.copy(magma);
+              return 0.9;
+            }
+            c.lerpColors(soil, soilDark, clamp01((-vy - 0.1) / 0.35));
+            return 0;
           },
         });
       }
@@ -893,6 +903,8 @@ export class Island3D {
     const rings = nTop + skirt.length;
     const P = new Float32Array(rings * SEG * 3);
     const C = new Float32Array(rings * SEG * 3);
+    const G = new Float32Array(rings * SEG); // per-vertex glow (unused for now, kept for themed ground)
+    const magma = theme.sea.kind === 'lava';
     for (let j = 0; j < SEG; j++) {
       const a = (j / SEG) * TAU;
       const ca = Math.cos(a);
@@ -924,7 +936,7 @@ export class Island3D {
         P[k] = ca * r;
         P[k + 1] = y;
         P[k + 2] = sa * r;
-        if (d <= 0.02) _c.copy(sand).multiplyScalar(0.7);
+        if (d <= 0.02) _c.copy(sand).multiplyScalar(magma ? 0.4 : 0.7);
         else if (y > -0.44) _c.copy(sand).multiplyScalar(Math.min(1, 0.84 + d * 0.6) * (0.97 + rng() * 0.06));
         else if (y > -0.58) _c.copy(wet);
         else _c.copy(under);
@@ -950,9 +962,11 @@ export class Island3D {
     const quads = (rings - 1) * SEG;
     const pos = new Float32Array(quads * 18);
     const col = new Float32Array(quads * 18);
+    const glow = new Float32Array(quads * 6);
     let o = 0;
     const put = (i, j, tint) => {
       const k = (i * SEG + (j % SEG)) * 3;
+      glow[o / 3] = G[k / 3];
       pos[o] = P[k];
       pos[o + 1] = P[k + 1];
       pos[o + 2] = P[k + 2];
@@ -977,7 +991,7 @@ export class Island3D {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    geo.setAttribute('aGlow', new THREE.BufferAttribute(new Float32Array(quads * 6), 1));
+    geo.setAttribute('aGlow', new THREE.BufferAttribute(glow, 1));
     return geo;
   }
 

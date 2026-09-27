@@ -937,19 +937,27 @@ function buildHat(k, hk, L, accs) {
       break;
     }
     case 'wizard': {
+      // the whole hat sways as one piece (brim, band and a cone bent backward, dotted with stars)
       const hatCol = c.body;
-      hk.add(cyl(0.6, 0.6, 0.035, 26), shade(hatCol, 0.1), { p: [0, 0.2, 0] });
-      hk.add(torus(0.415, 0.035, 6, 26), c.accent, { p: [0, 0.25, 0], r: [Math.PI / 2, 0, 0] });
-      const pivot = [0, HEAD_C + 0.2 * HS[1], 0];
-      const top = accKit(accs, 'head', pivot, 'sway');
+      const top = accKit(accs, 'head', [0, HEAD_C + 0.2 * HS[1], 0], 'sway');
       const f = top.frame({ p: [0, HEAD_C, 0], s: HS });
-      const g = cone(0.43, 0.8, 18);
-      g.translate(0, 0.4, 0);
-      bend(g, -0.85, 'z');
+      f.add(cyl(0.6, 0.6, 0.035, 26), shade(hatCol, 0.1), { p: [0, 0.2, 0] });
+      f.add(torus(0.415, 0.035, 6, 26), c.accent, { p: [0, 0.25, 0], r: [Math.PI / 2, 0, 0] });
+      const H = 0.8;
+      const BEND = -0.85;
+      const g = cone(0.43, H, 18);
+      g.translate(0, H / 2, 0);
+      bend(g, BEND, 'z');
       f.add(g, hatCol, { p: [0, 0.2, 0] });
-      for (const [yy, a, sc] of [[0.36, 0.4, 1], [0.52, -0.5, 0.8], [0.27, -1.4, 0.75], [0.64, 0.9, 0.6]]) {
-        const r = 0.43 * (1 - (yy - 0.2) / 0.8) + 0.012;
-        f.add(starGeo(0.05 * sc, 0.022 * sc, 0.012), glow || c.accent, { p: [Math.sin(a) * r, yy, Math.cos(a) * r - (yy - 0.21) * 0.25], r: [0, a, 0] }, glow ? 'glow' : 'matte');
+      const R = H / BEND;
+      for (const [t, a, sc] of [[0.16, 0.4, 1], [0.32, -0.5, 0.8], [0.08, -1.5, 0.75], [0.44, 1.0, 0.6], [0.12, 1.9, 0.7]]) {
+        // a point on the straight cone, then the same bend as the geometry
+        const rr = 0.43 * (1 - t / H) + 0.008;
+        const z0 = Math.cos(a) * rr;
+        const ang = t / R;
+        const rad = R - z0;
+        const p = [Math.sin(a) * rr, 0.2 + rad * Math.sin(ang), R - rad * Math.cos(ang)];
+        f.add(starGeo(0.05 * sc, 0.022 * sc, 0.012), glow || c.accent, { p, r: [0, a, 0] }, glow ? 'glow' : 'matte');
       }
       // long white beard and moustache
       k.add(ball(), c.hair, { ...surf(0, -0.62, -0.06), s: [0.26, 0.2, 0.16] });

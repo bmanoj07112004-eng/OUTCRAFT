@@ -4495,6 +4495,14 @@ button {
     grid-template-columns: 56px 1fr 56px;
     gap: 5px;
   }
+  .hs {
+    width: 16px;
+    height: 16px;
+  }
+  .hud-av {
+    width: 44px;
+    height: 44px;
+  }
   .bag-slot {
     width: 42px;
     height: 42px;
