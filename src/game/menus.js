@@ -3,6 +3,8 @@
 // reward, achievements, codex and tells, settings, how to play, about, the Quick Race ladder, both result
 // screens (Adventure level result; Quick Race / Daily results with the notebook, tells and share), pause,
 // "out of hearts", and the currency top bar with its live heart countdown.
+// Every change to the save goes through commit() (app.js); when another tab wrote the save, the open
+// screen is rendered again from the reloaded save (refreshAfterReload).
 
 import * as S from '../ui/screens.js';
 import { RIVALS, ITEMS, ITEM_BY_ID } from '../data.js';
@@ -11,14 +13,15 @@ import { SKINS, SKIN_BY_ID, RARITY } from '../skins.js';
 import { LEVELS, WORLDS, MAX_STARS, levelById } from '../levels.js';
 import * as eco from '../economy.js';
 import * as store from '../storage.js';
-import { daysBetween } from '../rng.js';
+import { daysBetween, dateKey } from '../rng.js';
 import { sfx, setSound, setMusic } from '../audio.js';
 import { createPlayer, portraitURL, Preview } from '../3d/characters.js';
-import { app, REPO_URL, ABOUT, clamp, countdown, longWait, pct, playerPortrait, rivalPortrait, equippedSkin } from './app.js';
+import { app, REPO_URL, ABOUT, commit, clamp, countdown, longWait, pct, playerPortrait, rivalPortrait, equippedSkin } from './app.js';
 import * as play from './play.js';
 import * as attract from './attract.js';
 
 const RIVAL_BY_ID = Object.fromEntries(RIVALS.map((r) => [r.id, r]));
+const GUARD_MS = 400; // a second tap this soon on PLAY / REMATCH / NEXT or on the same BUY is ignored
 const back = { settings: 'title', how: 'title', about: 'title', shop: 'title', codex: 'title', achievements: 'title' };
 let howThen = null; // what to do after How to play: 'daily' | 'quick' | null
 let shopSel = null; // skin shown in the shop preview
@@ -27,18 +30,44 @@ let previewFailed = false;
 let popupLevel = null; // level id whose popup is open
 let lastBar = 0;
 let lastHearts = -1;
+let lastDay = null;
 let lastResult = null;
-
-const save = () => store.save(app.state);
+let launchedAt = 0;
+let lastBuy = { id: null, t: 0 };
 
 // ------------------------------------------------------------------ small helpers
 export function hideForMatch() {
   S.closeAllModals();
   S.showScreen(null);
+  S.clearBoosterSelection();
   popupLevel = null;
 }
 
 export const confirm = (o) => S.confirmDialog(o);
+export const toast = (text, o) => S.toast(text, o);
+
+// Start a match from a button: the second tap of a double tap is ignored (it would skip the VS splash).
+function launch(fn) {
+  const t = performance.now();
+  if (t - launchedAt < GUARD_MS) return;
+  launchedAt = t;
+  fn();
+}
+
+// The same BUY pressed again right away (a double tap) buys once.
+function repeatBuy(id) {
+  const t = performance.now();
+  const again = lastBuy.id === id && t - lastBuy.t < GUARD_MS;
+  lastBuy = { id, t };
+  return again;
+}
+
+// Clock time ('14:32') at which every heart is back, or null when they are full.
+function heartsFullAt(h) {
+  if (!h.nextInMs) return null;
+  const t = new Date(Date.now() + h.nextInMs + (eco.HEARTS_MAX - h.n - 1) * eco.HEART_REGEN_MS);
+  return `${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`;
+}
 
 function ensureAttract() {
   if (!play.active() && !attract.running()) attract.start();
@@ -91,17 +120,18 @@ function fromScreen() {
   return s === 'screen-map' ? 'map' : s === 'screen-shop' ? back.shop : 'title';
 }
 
+// Hearts regrow with time alone (heartsNow works them out from the save), so the bar never saves.
 export function updateTopBar() {
   const st = app.state;
   const h = eco.heartsNow(st, Date.now());
-  if (h.n !== lastHearts) {
-    if (lastHearts >= 0) save();
-    lastHearts = h.n;
-  }
+  lastHearts = h.n;
   S.renderTopBar({ coins: st.wallet.coins, gems: st.wallet.gems, hearts: h.n, heartsMax: eco.HEARTS_MAX, heartsText: h.nextInMs ? countdown(h.nextInMs) : '' }, topCb);
+  return h;
 }
 
-// Once a second on the menus: the heart countdown, and the popups that show it.
+// Once a second on the menus: the heart countdowns are updated in place (a re-render would swallow the
+// tap in progress); screens showing hearts are re-rendered only when a heart comes back. At midnight
+// the daily reward calendar and the title badges move on to the new day.
 export function tick(dt) {
   const scr = S.currentScreen();
   if (preview && scr === 'screen-shop' && S.shopCurrentTab() === 'skins') preview.update(dt);
@@ -109,10 +139,67 @@ export function tick(dt) {
   if (t - lastBar < 1000 || app.mode === 'play') return;
   lastBar = t;
   const before = lastHearts;
+  const h = updateTopBar();
+  S.updateHeartsCountdown(h.nextInMs ? countdown(h.nextInMs) : '');
+  if (before >= 0 && h.n !== before) {
+    if (popupLevel && S.isModalOpen('level')) openLevel(popupLevel);
+    if (scr === 'screen-shop' && S.shopCurrentTab() === 'hearts') renderShopNow();
+    refreshTitle();
+  }
+  const day = dateKey();
+  if (lastDay && day !== lastDay) {
+    if (S.isModalOpen('daily')) showDailyReward();
+    refreshTitle();
+  }
+  lastDay = day;
+}
+
+// The save was reloaded from storage (another tab wrote it): apply its settings and show it. During a
+// match nothing is redrawn (the result is applied to the reloaded save when the match ends).
+export function refreshAfterReload(live) {
+  const s = app.state.settings;
+  setSound(s.sound);
+  setMusic(s.music);
+  app.input.setOptions({ sensitivity: s.sensitivity, invertY: s.invertY });
+  if (app.engine.quality !== s.quality) {
+    app.engine.setQuality(s.quality);
+    app.redraw = true;
+  }
+  lastHearts = -1;
+  if (live) return;
+  if (!play.active()) app.stage.setSkin(equippedSkin());
+  shopSel = null;
+  switch (S.currentScreen()) {
+    case 'screen-title':
+      refreshTitle();
+      break;
+    case 'screen-map':
+      S.renderMap(mapVM(), mapCb);
+      break;
+    case 'screen-shop':
+      shopSel = app.state.inventory.equipped;
+      renderShopNow();
+      showPreview(shopSel);
+      break;
+    case 'screen-achievements':
+      showAchievements();
+      break;
+    case 'screen-codex':
+      showCodex();
+      break;
+    case 'screen-settings':
+      showSettings();
+      break;
+    case 'screen-rivals':
+      showRivals();
+      break;
+  }
+  if (popupLevel && S.isModalOpen('level')) {
+    if (popupLevel <= app.state.adventure.unlocked) openLevel(popupLevel);
+    else S.closeModal('level');
+  }
+  if (S.isModalOpen('daily')) showDailyReward();
   updateTopBar();
-  const h = app.state.hearts.n;
-  if (popupLevel && S.isModalOpen('level') && (h === 0 || before !== h)) openLevel(popupLevel);
-  if (scr === 'screen-shop' && S.shopCurrentTab() === 'hearts' && h < eco.HEARTS_MAX) renderShopNow();
 }
 
 // ------------------------------------------------------------------ title
@@ -124,12 +211,12 @@ const titleCb = {
   },
   onDaily: () => {
     const st = app.state;
-    if (!st.seenHowTo && !st.tutorialDone) return showHow('daily', 'title');
-    play.startDaily();
+    if (!st.seenHowTo3d && !st.tutorial3d) return showHow('daily', 'title');
+    launch(() => play.startDaily());
   },
   onQuick: () => {
     const st = app.state;
-    if (!st.seenHowTo && !st.tutorialDone) return showHow('quick', 'title');
+    if (!st.seenHowTo3d && !st.tutorial3d) return showHow('quick', 'title');
     showRivals();
   },
   onShop: () => showShop(null, 'title'),
@@ -143,12 +230,15 @@ const titleCb = {
 
 function titleVM() {
   const st = app.state;
-  const lvlId = Math.min(st.adventure.unlocked, LEVELS.length);
+  const now = Date.now();
+  const lvlId = eco.currentLevel(st);
   const lvl = levelById(lvlId);
   const d = store.todaysDaily();
   const done = st.daily.results[d.key];
   const gap = st.daily.lastKey ? daysBetween(st.daily.lastKey, d.key) : 99;
   const streak = gap <= 1 ? st.daily.streak || 0 : 0;
+  // A ranked attempt left before the end (quit, reload) counts as played, and lost.
+  const dailyDone = done ? (done.pending ? 'Left early' : `Done ${done.stars.player}–${done.stars.rival}`) : null;
   const r = RIVALS[st.ladder.unlocked];
   let dossier = null;
   if (st.stats.matches > 0) {
@@ -161,11 +251,13 @@ function titleVM() {
   }
   return {
     level: lvlId,
-    levelName: lvl.name,
-    dailySub: done ? `Done ${done.stars.player}–${done.stars.rival}${streak ? ` · streak ${streak}` : ''}` : `#${d.number} · ${d.twist.name}${streak ? ` · streak ${streak}` : ''}`,
+    levelName: eco.adventureComplete(st) ? `${lvl.name} · Adventure complete!` : lvl.name,
+    dailySub: `${dailyDone || `#${d.number} · ${d.twist.name}`}${streak ? ` · streak ${streak}` : ''}`,
     dailyDone: !!done,
     quickSub: `vs ${r.name} · ${r.title}`,
-    dailyReward: eco.dailyStatus(st, Date.now()).canClaim,
+    dailyReward: eco.dailyStatus(st, now).canClaim,
+    dailyStreak: eco.dailyStreak(st, now),
+    heartsFullAt: heartsFullAt(eco.heartsNow(st, now)),
     achievements: eco.claimableAchievements(st),
     codex: `${store.codexCount(st)}/${ITEMS.length}`,
     dossier,
@@ -187,9 +279,12 @@ function refreshTitle() {
 }
 
 // ------------------------------------------------------------------ level map and level popup
+// The pin sits on the first level not cleared yet; cleared levels always show their stars (level 60
+// included), and once all are cleared the map opens on the first one short of 3 stars.
 function mapVM() {
   const st = app.state;
-  const cur = Math.min(st.adventure.unlocked, LEVELS.length);
+  const cur = eco.currentLevel(st);
+  const top = st.adventure.unlocked;
   const skin = equippedSkin();
   return {
     worlds: WORLDS.map((w) => ({
@@ -200,12 +295,13 @@ function mapVM() {
     })),
     levels: LEVELS.map((l) => {
       const r = RIVAL_BY_ID[l.rival];
+      const stars = st.levels[l.id]?.stars || 0;
       return {
         id: l.id,
         world: l.world,
-        stars: st.levels[l.id]?.stars || 0,
+        stars,
         boss: l.boss,
-        state: l.id < cur ? 'done' : l.id === cur ? 'current' : 'locked',
+        state: l.id > top ? 'locked' : l.id === cur && !stars ? 'current' : 'done',
         rivalPortrait: l.boss ? rivalPortrait(r, 96) : null,
         rivalColor: r.color,
         rivalName: r.name,
@@ -219,11 +315,13 @@ function mapVM() {
   };
 }
 
+const mapCb = { onLevel: (id) => openLevel(id), onBack: () => showTitle() };
+
 export function showMap(openId = null) {
   S.closeAllModals();
   popupLevel = null;
   ensureAttract();
-  S.renderMap(mapVM(), { onLevel: (id) => openLevel(id), onBack: showTitle });
+  S.renderMap(mapVM(), mapCb);
   S.showScreen('map');
   updateTopBar();
   if (openId) {
@@ -262,6 +360,7 @@ function popupVM(level) {
     selected: [],
     hearts: h.n,
     heartsText: h.nextInMs ? countdown(h.nextInMs) : '',
+    heartsFullAt: heartsFullAt(h),
   };
 }
 
@@ -270,24 +369,29 @@ export function openLevel(id) {
   if (!level || id > app.state.adventure.unlocked) return;
   popupLevel = id;
   S.renderLevelPopup(popupVM(level), {
-    onPlay: (ids) => {
-      if (play.startLevel(level.id, ids)) popupLevel = null;
-    },
+    onPlay: (ids) =>
+      launch(() => {
+        if (play.startLevel(level.id, ids)) popupLevel = null;
+      }),
     onClose: () => {
       popupLevel = null;
     },
-    onBuyBooster: (bid) => {
-      const r = eco.buy(app.state, bid, Date.now());
+    onBuyBooster: async (bid) => {
+      if (repeatBuy(bid)) return;
+      const b = eco.BOOSTERS[bid];
+      const ok = await S.confirmDialog({ title: `Buy ${b.name}?`, text: `${b.desc} It costs ${S.fmt(b.price.coins)} coins (you have ${S.fmt(app.state.wallet.coins)}).`, ok: 'BUY' });
+      if (!ok) return;
+      const r = commit((st) => eco.buy(st, bid, Date.now()));
       if (!r.ok) {
         sfx.error();
         S.toast(eco.REASONS[r.reason] || 'You cannot buy that yet.', { kind: 'bad' });
         return;
       }
       sfx.buy();
-      S.selectBooster(bid);
-      save();
       updateTopBar();
-      S.toast(`${eco.BOOSTERS[bid].name} bought and ready!`, { kind: 'good' });
+      S.toast(`${b.name} bought and ready!`, { kind: 'good' });
+      if (popupLevel !== level.id || !S.isModalOpen('level')) return;
+      S.selectBooster(bid);
       openLevel(level.id);
     },
     onNoHearts: () => noHearts(level),
@@ -306,14 +410,13 @@ export async function noHearts(level) {
     cancel: 'WAIT',
   });
   if (!ok) return;
-  const r = eco.refillHearts(app.state, Date.now());
+  const r = commit((s) => eco.refillHearts(s, Date.now()));
   if (!r.ok) {
     sfx.error();
     S.toast(r.reason === 'gems' ? `Not enough gems (${eco.HEART_REFILL_GEMS} needed). Win levels and claim rewards to earn more.` : eco.REASONS[r.reason], { kind: 'bad', dur: 3200 });
     return;
   }
   sfx.buy();
-  save();
   updateTopBar();
   S.toast('Hearts refilled! Go get them.', { kind: 'good' });
   if (level && popupLevel === level.id && S.isModalOpen('level')) openLevel(level.id);
@@ -342,7 +445,7 @@ function shopVM(tab) {
       equipped: st.inventory.equipped === s.id,
       canAfford: eco.canAfford(st, s.price),
     })),
-    boosters: eco.SHOP.filter((e) => e.kind === 'booster').map((e) => ({ id: e.id, name: e.count > 1 ? eco.BOOSTERS[e.booster].name : e.name, desc: e.desc, icon: e.booster, count: eco.boosterCount(st, e.booster), price: e.price, pack: e.count, canAfford: eco.canAfford(st, e.price) })),
+    boosters: eco.SHOP.filter((e) => e.kind === 'booster').map((e) => ({ id: e.id, name: e.name, desc: e.desc, icon: e.booster, count: eco.boosterCount(st, e.booster), price: e.price, pack: e.count, canAfford: eco.canAfford(st, e.price) })),
     hearts: { n: h.n, max: eco.HEARTS_MAX, nextText: h.nextInMs ? countdown(h.nextInMs) : '', refillGems: eco.HEART_REFILL_GEMS, canRefill: st.wallet.gems >= eco.HEART_REFILL_GEMS },
     exchange: eco.SHOP.filter((e) => e.kind === 'coins').map((e) => ({ id: e.id, gems: e.price.gems, coins: e.coins, canAfford: eco.canAfford(st, e.price), label: e.name.replace(' of Coins', '') })),
   };
@@ -369,17 +472,27 @@ const shopCb = {
     shopSel = id;
     showPreview(id);
   },
-  onBuy: (id) => {
-    const st = app.state;
+  onBuy: async (id) => {
     const e = eco.SHOP_BY_ID[id];
-    const r = eco.buy(st, id, Date.now());
+    if (!e || repeatBuy(id)) return;
+    // Gems are scarce and a trade cannot be undone: always ask.
+    if (e.price && e.price.gems) {
+      const gems = app.state.wallet.gems;
+      const trade = e.kind === 'coins';
+      const ok = await S.confirmDialog({
+        title: trade ? 'Trade gems for coins?' : `Buy ${e.name}?`,
+        text: trade ? `${e.price.gems} gems for ${S.fmt(e.coins)} coins. You have ${gems} gems.` : `It costs ${e.price.gems} gems. You have ${gems}.`,
+        ok: trade ? 'TRADE' : 'BUY',
+      });
+      if (!ok) return;
+    }
+    const r = commit((st) => eco.buy(st, id, Date.now()));
     if (!r.ok) {
       sfx.error();
       S.toast(eco.REASONS[r.reason] || 'You cannot buy that yet.', { kind: 'bad' });
       return;
     }
     sfx.buy();
-    save();
     updateTopBar();
     if (e.kind === 'skin') S.toast(`${e.name} is yours! Tap EQUIP to wear it.`, { kind: 'good' });
     else if (e.kind === 'booster') S.toast(`+${e.count} ${eco.BOOSTERS[e.booster].name}`, { kind: 'good' });
@@ -388,23 +501,23 @@ const shopCb = {
     renderShopNow();
   },
   onEquip: (id) => {
-    const st = app.state;
-    if (!eco.equipSkin(st, id)) return;
+    if (!commit((st) => eco.equipSkin(st, id))) return;
     sfx.pop();
-    save();
     app.stage.setSkin(SKIN_BY_ID[id]);
     S.toast(`Now wearing ${SKIN_BY_ID[id].name}.`, { kind: 'good' });
     renderShopNow();
   },
-  onRefill: () => {
-    const r = eco.refillHearts(app.state, Date.now());
+  onRefill: async () => {
+    if (repeatBuy('hearts')) return;
+    const ok = await S.confirmDialog({ title: 'Refill your hearts?', text: `All ${eco.HEARTS_MAX} hearts now for ${eco.HEART_REFILL_GEMS} gems. You have ${app.state.wallet.gems} gems.`, ok: 'REFILL' });
+    if (!ok) return;
+    const r = commit((st) => eco.refillHearts(st, Date.now()));
     if (!r.ok) {
       sfx.error();
       S.toast(eco.REASONS[r.reason], { kind: 'bad' });
       return;
     }
     sfx.buy();
-    save();
     updateTopBar();
     S.toast('Hearts refilled!', { kind: 'good' });
     renderShopNow();
@@ -440,10 +553,9 @@ export function showDailyReward() {
     },
     {
       onClaim: () => {
-        const got = eco.claimDaily(app.state, Date.now());
+        const got = commit((st) => eco.claimDaily(st, Date.now()));
         if (!got) return;
         sfx.buy();
-        save();
         updateTopBar();
         S.toast(got.skin ? `Day ${got.day}: the ${SKIN_BY_ID[got.skin].name} skin! Equip it in the shop.` : `Day ${got.day}: ${got.label}!`, { kind: 'good', dur: 2800 });
         showDailyReward();
@@ -463,10 +575,9 @@ export function showAchievements(from = null) {
     },
     {
       onClaim: (id) => {
-        const got = eco.claimAchievement(app.state, id);
+        const got = commit((st) => eco.claimAchievement(st, id));
         if (!got) return;
         sfx.buy();
-        save();
         updateTopBar();
         S.toast(got.skin ? `The ${SKIN_BY_ID[got.skin].name} skin is yours! Equip it in the shop.` : `+${got.label}`, { kind: 'good' });
         showAchievements();
@@ -508,13 +619,13 @@ export function showCodex(from = null) {
         danger: true,
       });
       if (!ok) return;
-      const st = app.state;
-      st.model = null;
-      st.dex = {};
-      st.ladder = { unlocked: 0, beaten: {} };
-      st.stats = { matches: 0, wins: 0, snatched: 0, outread: 0, history: [] };
+      commit((st) => {
+        st.model = null;
+        st.dex = {};
+        st.ladder = { unlocked: 0, beaten: {} };
+        st.stats = { matches: 0, wins: 0, snatched: 0, outread: 0, history: [] };
+      });
       app.model = new PlayerModel();
-      save();
       S.toast('Forgotten. The rivals have no idea who you are.', { kind: 'good' });
       showCodex();
     },
@@ -538,40 +649,43 @@ function settingsVM() {
   };
 }
 
+const SETTING = {
+  quality: (v) => v,
+  sound: (v) => !!v,
+  music: (v) => !!v,
+  sensitivity: (v) => clamp(+v || 1, 0.3, 2),
+  invertY: (v) => !!v,
+  autoReturn: (v) => !!v,
+  glass: (v) => !!v,
+};
+
 function onSetting(key, value) {
-  const s = app.state.settings;
+  if (!SETTING[key]) return;
+  const v = SETTING[key](value);
+  commit((st) => (st.settings[key] = v));
   switch (key) {
     case 'quality':
-      s.quality = value;
-      app.engine.setQuality(value);
+      app.engine.setQuality(v);
+      app.redraw = true;
       break;
     case 'sound':
-      s.sound = !!value;
-      setSound(s.sound);
+      setSound(v);
       break;
     case 'music':
-      s.music = !!value;
-      setMusic(s.music);
+      setMusic(v);
       break;
     case 'sensitivity':
-      s.sensitivity = clamp(+value || 1, 0.3, 2);
-      app.input.setOptions({ sensitivity: s.sensitivity });
+      app.input.setOptions({ sensitivity: v });
       break;
     case 'invertY':
-      s.invertY = !!value;
-      app.input.setOptions({ invertY: s.invertY });
+      app.input.setOptions({ invertY: v });
       break;
     case 'autoReturn': {
-      s.autoReturn = !!value;
       const p = play.current();
-      if (p) p.match.options.autoReturn = s.autoReturn;
+      if (p) p.match.options.autoReturn = v;
       break;
     }
-    case 'glass':
-      s.glass = !!value;
-      break;
   }
-  save();
 }
 
 export function showSettings(from = null) {
@@ -579,22 +693,25 @@ export function showSettings(from = null) {
   if (from === 'pause') S.closeModal('pause');
   S.renderSettings(settingsVM(), {
     onChange: onSetting,
+    // A match in progress (settings opened from the pause menu) ends first, unrecorded: its result must
+    // not land in the fresh save.
     onReset: async () => {
       const ok = await S.confirmDialog({
         title: 'Reset all progress?',
-        text: 'Your coins, gems, skins, stars, levels and everything the rivals know about you will be erased. This cannot be undone.',
+        text: `Your coins, gems, skins, stars, levels and everything the rivals know about you will be erased.${play.active() ? ' The match you are playing ends too.' : ''} This cannot be undone.`,
         ok: 'RESET',
         danger: true,
       });
       if (!ok) return;
       const st = app.state;
-      app.state = store.wipe({ settings: st.settings, seenHowTo: true, tutorialDone: !!st.tutorialDone });
+      app.state = store.wipe({ settings: st.settings, seenHowTo: true, tutorialDone: !!st.tutorialDone, seenHowTo3d: true, tutorial3d: !!st.tutorial3d });
       app.model = new PlayerModel();
-      save();
+      commit(() => null);
       shopSel = null;
       lastHearts = -1;
       app.stage.setSkin(equippedSkin());
-      if (!play.active()) attract.start();
+      if (play.active()) play.leave();
+      else attract.start();
       updateTopBar();
       S.toast('Progress reset. A fresh start!', { kind: 'good' });
       showSettings();
@@ -617,11 +734,10 @@ export function showHow(then = null, from = null) {
   if (from) back.how = from;
   S.renderHow({ okText: then ? "LET'S GO!" : 'GOT IT' }, {
     onOk: () => {
-      app.state.seenHowTo = true;
-      save();
+      commit((st) => (st.seenHowTo3d = true));
       const t = howThen;
       howThen = null;
-      if (t === 'daily') play.startDaily();
+      if (t === 'daily') launch(() => play.startDaily());
       else if (t === 'quick') showRivals();
       else if (back.how === 'settings') showSettings();
       else showTitle();
@@ -644,7 +760,7 @@ export function showRivals() {
       rivals: RIVALS.map((r, i) => ({ ...rivalVM(r), blurb: r.blurb, locked: i > st.ladder.unlocked, beaten: !!st.ladder.beaten[r.id], next: i === st.ladder.unlocked })),
       selected: st.ladder.unlocked,
     },
-    { onRace: (i) => play.startQuick(i), onBack: showTitle },
+    { onRace: (i) => launch(() => play.startQuick(i)), onBack: showTitle },
   );
   S.showScreen('rivals');
 }
@@ -654,16 +770,13 @@ export function showPause(P) {
   if (!P) return;
   const title = P.kind === 'level' ? `Level ${P.level.id} · ${P.level.name}` : P.kind === 'daily' ? `Daily Commission #${P.daily.number}` : `Quick Race vs ${P.rivalDef.name}`;
   S.renderPause(
-    { title, glass: !!app.state.settings.glass, canRestart: true, quitText: P.kind === 'level' ? 'QUIT (-1 HEART)' : 'QUIT' },
+    { title, glass: !!app.state.settings.glass, canRestart: true, quitText: 'QUIT' },
     {
       onResume: () => play.resume(),
       onRestart: () => play.restart(),
       onSettings: () => showSettings('pause'),
       onQuit: () => play.quit(),
-      onGlass: (on) => {
-        app.state.settings.glass = !!on;
-        save();
-      },
+      onGlass: (on) => commit((st) => (st.settings.glass = !!on)),
     },
   );
 }
@@ -704,8 +817,10 @@ function showLevelResult(r) {
   const { summary, level, grant, rival, rec } = r;
   const st = app.state;
   const h = eco.heartsNow(st, Date.now());
-  // Codex unlocks, new or broken Tells and goals ready to claim.
+  // Practice, unlocks, a boss's booster, Codex unlocks, new or broken Tells and goals ready to claim.
   const notes = [];
+  if (r.practice) notes.push('Practice (blind rival, ?blind=1): no rewards');
+  if (grant.booster) notes.push(`Boss reward: +1 ${eco.BOOSTERS[grant.booster].name}`);
   if (grant.unlocked) {
     const nl = levelById(grant.unlocked);
     notes.push(nl && nl.index === 0 ? `New world unlocked: ${WORLDS[nl.world].name}!` : `Level ${grant.unlocked} unlocked`);
@@ -733,6 +848,8 @@ function showLevelResult(r) {
       matchStars: summary.stars,
       quote: grant.passed ? rival.lose : rival.win,
       reason: grant.passed ? null : failReason(level, summary, rival),
+      goalMissed: !grant.passed && summary.winner === 'player' ? failReason(level, summary, rival) : null,
+      replayCapped: !!grant.replayCapped,
       tip: grant.passed ? null : failTip(level, summary, rival),
       heartLost: !grant.passed,
       hearts: h.n,
@@ -741,9 +858,9 @@ function showLevelResult(r) {
       notes,
     },
     {
-      onNext: () => afterLevel(level.id + 1),
-      onReplay: () => afterLevel(level.id),
-      onRetry: () => afterLevel(level.id),
+      onNext: () => launch(() => afterLevel(level.id + 1)),
+      onReplay: () => launch(() => afterLevel(level.id)),
+      onRetry: () => launch(() => afterLevel(level.id)),
       onMap: () => afterLevel(null),
     },
   );
@@ -755,12 +872,22 @@ function afterLevel(openId) {
   showMap(openId && openId <= app.state.adventure.unlocked ? openId : null);
 }
 
+// Coins of a Quick Race / Daily win against today's paid-win allowance (so the cap is never silent).
+function coinLine(c) {
+  if (!c) return null;
+  if (c.practice) return 'Practice (blind rival, ?blind=1): no rewards';
+  if (c.coins) return `+${c.coins} coins (${c.paidToday}/${c.cap} paid wins today)`;
+  if (c.capped) return `Daily coin limit reached (${c.cap} paid wins): back tomorrow`;
+  return null;
+}
+
 function showQuickResult(r) {
   const { summary, rec, rival, daily } = r;
   const st = app.state;
   const win = rec.win;
   const s = summary.stats;
   const top = daily ? null : app.model.dossier(1)[0];
+  const dailyText = daily ? (rec.dailyInfo ? `Daily #${daily.number} complete · streak ${rec.dailyInfo.streak} · new commission tomorrow` : `Practice run · only your first attempt at Daily #${daily.number} counts`) : null;
   S.renderResults(
     {
       win,
@@ -778,14 +905,14 @@ function showQuickResult(r) {
         text: win ? rival.lose : rival.win,
         sub: top ? `What the rivals wrote down: ${top.text}` : daily ? "Today's rival started with no notes on you." : 'No clear habit yet. They are still watching.',
       },
-      daily: daily ? (rec.dailyInfo ? `Daily #${daily.number} complete · streak ${rec.dailyInfo.streak} · new commission tomorrow` : `Practice run · only your first attempt at Daily #${daily.number} counts`) : null,
+      daily: [dailyText, coinLine(r.coins)].filter(Boolean).join(' · ') || null,
       coins: r.coins ? r.coins.coins : 0,
       canNext: !daily && r.rivalIndex < st.ladder.unlocked,
       isDaily: !!daily,
     },
     {
-      onAgain: () => (daily ? play.startDaily() : play.startQuick(r.rivalIndex)),
-      onNext: () => play.startQuick(Math.min(r.rivalIndex + 1, app.state.ladder.unlocked)),
+      onAgain: () => launch(() => (daily ? play.startDaily() : play.startQuick(r.rivalIndex))),
+      onNext: () => launch(() => play.startQuick(Math.min(r.rivalIndex + 1, app.state.ladder.unlocked))),
       onShare: share,
       onCodex: () => showCodex('results'),
       onMenu: () => {

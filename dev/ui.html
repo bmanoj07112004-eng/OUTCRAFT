@@ -38,7 +38,10 @@
       // Dev harness for src/ui/screens.js and src/ui/hud.js: loads index.html's markup (without its
       // script), renders one screen from mock view models, and paints a fake island behind the HUD.
       //   dev/ui.html?screen=title|map|popup|win|fail|shop|boosters|hearts|daily|achievements|settings|
-      //                      hud|vs|results|codex|rivals|how|about|pause|confirm|loading|nogl
+      //                      hud|vs|results|codex|rivals|how|about|pause|confirm|buy|loading|nogl
+      //   extras: &coins=1234567 &gems=99999 (top bar), &hearts=0 (popup), &goal=1 (fail), &capped=1 (win),
+      //           &coincap=1 (results),
+      //           &edge=1 &chrome=0 (hud)
       import { RIVALS, ITEMS } from '../src/data.js';
       import { HABITS, HABIT_IDS } from '../src/model.js';
       import { SKINS, RARITY } from '../src/skins.js';
@@ -269,7 +272,7 @@
         chance: 0.41,
         rows: HABIT_IDS.map((id, i) => ({ glyph: HABITS[id].glyph, name: HABITS[id].name, weight: [100, 62, 48, 30, 12][i], used: i < 4 })),
       };
-      const topbar = { coins: 1250, gems: 35, hearts: 4, heartsMax: 5, heartsText: '12:48' };
+      const topbar = { coins: +(params.get('coins') || 1250), gems: +(params.get('gems') || 35), hearts: params.get('hearts') === '0' ? 0 : 4, heartsMax: 5, heartsText: '12:48' };
       const noop = (name) => (...a) => console.log('[cb]', name, ...a);
       const cbs = new Proxy({}, { get: (_, k) => noop(k) });
 
@@ -295,6 +298,8 @@
                 dailyReward: true,
                 achievements: 2,
                 codex: '7/12',
+                dailyStreak: 5,
+                heartsFullAt: '14:32',
                 dossier: params.get('dossier') === '0' ? null : { greet: 'Back already? It has been 2 days. We missed your habits.', lines: ['You usually walk to the nearest one: 78% of trips, when chance says 41%.'], notebook: 142, nextRival: 'RAVEN' },
               },
               cbs,
@@ -330,12 +335,13 @@
                   selected: ['boots'],
                   hearts: params.get('hearts') === '0' ? 0 : 4,
                   heartsText: '12:48',
+                  heartsFullAt: '14:32',
                 },
                 cbs,
               );
             else if (which === 'win')
-              S.renderLevelResult({ passed: true, id: CURRENT, name: 'Icicle Inlet', stars: 3, score: 4380, best: 4380, newBest: true, firstClear: true, coins: 45, gems: 2, hasNext: true, rival: { name: 'FOX', color: fox.color, portrait: RP.fox }, playerPortrait: player.portrait, matchStars: { player: 3, rival: 1 }, quote: fox.lose, notebook }, cbs);
-            else S.renderLevelResult({ passed: false, id: CURRENT, name: 'Icicle Inlet', stars: 0, score: 1840, rival: { name: 'FOX', color: fox.color, portrait: RP.fox }, playerPortrait: player.portrait, matchStars: { player: 1, rival: 3 }, reason: 'FOX won 3–1', tip: "When FOX's line turns red, it is heading for your target. Switch to another one.", heartLost: true, hearts: 3, heartsText: '19:59', quote: fox.win, notebook }, cbs);
+              S.renderLevelResult({ passed: true, id: CURRENT, name: 'Icicle Inlet', stars: 3, score: 4380, best: 4380, newBest: params.get('capped') !== '1', firstClear: params.get('capped') !== '1', coins: params.get('capped') === '1' ? 0 : 45, gems: 2, replayCapped: params.get('capped') === '1', replaysPaid: params.get('capped') === '1' ? 3 : 0, replayCap: params.get('capped') === '1' ? 3 : 0, booster: params.get('capped') === '1' ? null : { id: 'headstart', name: 'Head Start' }, hasNext: true, notes: ['Codex: Lantern added', 'New Tell spotted'], rival: { name: 'FOX', color: fox.color, portrait: RP.fox }, playerPortrait: player.portrait, matchStars: { player: 3, rival: 1 }, quote: fox.lose, notebook }, cbs);
+            else S.renderLevelResult({ passed: false, id: CURRENT, name: 'Icicle Inlet', stars: 0, score: 1840, rival: { name: 'FOX', color: fox.color, portrait: RP.fox }, playerPortrait: player.portrait, matchStars: { player: 1, rival: 3 }, reason: params.get('goal') === '1' ? 'You won 3–1, but lost an order on the way.' : 'FOX won 3–1', goalMissed: params.get('goal') === '1' ? 'Win without losing a single order.' : null, tip: "When FOX's line turns red, it is heading for your target. Switch to another one.", heartLost: true, hearts: 3, heartsText: '19:59', quote: fox.win, notebook }, cbs);
             break;
           case 'shop':
           case 'boosters':
@@ -454,7 +460,7 @@
                 notebook,
                 quote: { text: fox.lose, sub: 'What the rivals wrote down: You usually walk to the nearest one.' },
                 daily: null,
-                coins: 20,
+                coins: params.get('coincap') === '1' ? { coins: 0, capped: true, paidToday: 5, cap: 5 } : { coins: 20, paidToday: 3, cap: 5 },
                 canNext: true,
               },
               cbs,
@@ -470,6 +476,11 @@
             paintBackground();
             S.renderAbout({}, cbs);
             S.showScreen('about');
+            break;
+          case 'buy':
+            paintBackground();
+            S.showScreen('shop');
+            S.confirmDialog({ title: 'Buy this?', buy: { name: 'Head Start', icon: 'headstart', count: 3, price: { coins: 240 }, have: 1250 } });
             break;
           case 'confirm':
             paintBackground();
@@ -513,6 +524,8 @@
               if (params.get('pointer') === 'home') hud.pointer('home', 'CRAFT');
               else hud.pointer({ x: spots[6].x, y: spots[6].y, label: 'TAP' });
             }
+            if (params.get('edge') === '1') hud.edgeArrow({ x: innerWidth * 0.3, y: innerHeight + 200, color: '#2f86ff', icon: 'home' });
+            if (params.get('chrome') === '0') hud.setChrome(false);
             if (which === 'vs') hud.vs({ player, rival: { name: fox.name, color: fox.color, portrait: RP.fox, title: fox.title }, title: `LEVEL ${CURRENT} · ICICLE INLET`, goal: 'Lead when the 90 s clock runs out, or win 3 orders first.', sub: '142 of your moves in its notebook', dur: 60000 });
             if (which === 'pause') S.renderPause({ title: `Level ${CURRENT} · Icicle Inlet`, glass: true, canRestart: true, quitText: 'QUIT (-1 heart)' }, cbs);
             break;
@@ -546,7 +559,7 @@
       if (params.get('clean') !== '1') {
         const nav = document.createElement('nav');
         nav.className = 'dev-nav';
-        nav.innerHTML = 'title map popup win fail shop boosters hearts daily achievements settings hud vs results codex rivals how about pause confirm loading nogl'
+        nav.innerHTML = 'title map popup win fail shop boosters hearts daily achievements settings hud vs results codex rivals how about pause confirm buy loading nogl'
           .split(' ')
           .map((s) => `<a href="?screen=${s}">${s}</a>`)
           .join('');

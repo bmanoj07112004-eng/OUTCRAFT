@@ -25,6 +25,7 @@
         <span class="cur-ic"><svg class="ic"><use href="#ic-heart" /></svg><b id="tb-hearts">5</b></span>
         <span class="cur-val" id="tb-hearts-t">FULL</span>
         <i class="cur-plus"><svg class="ic"><use href="#ic-plus" /></svg></i>
+        <span class="cur-note" id="tb-hearts-full" hidden></span>
       </button>
       <button class="cur cur-coins" data-act="coins" aria-label="Coins">
         <span class="cur-ic"><svg class="ic"><use href="#ic-coin" /></svg></span>
@@ -65,8 +66,8 @@
         <p class="logo-tag">Race an AI rival that <b>learns how you move</b></p>
       </div>
       <nav class="side-btns side-left" aria-label="Extras">
-        <button class="side-btn" data-act="dailyReward"><span class="sb-disc">
-          <svg class="ic"><use href="#ic-gift" /></svg></span><span class="sb-lbl">Daily</span><i class="badge" id="badge-daily" hidden>!</i></button>
+        <button class="side-btn" data-act="dailyReward" aria-label="Daily reward"><span class="sb-disc">
+          <svg class="ic"><use href="#ic-gift" /></svg></span><span class="sb-lbl">Daily</span><i class="badge" id="badge-daily" hidden>!</i><i class="sb-streak" id="title-streak" hidden></i></button>
         <button class="side-btn" data-act="achievements"><span class="sb-disc">
           <svg class="ic"><use href="#ic-trophy" /></svg></span><span class="sb-lbl">Goals</span><i class="badge" id="badge-ach" hidden></i></button>
         <button class="side-btn" data-act="codex"><span class="sb-disc">
@@ -320,6 +321,7 @@
     <div id="modal-confirm" class="modal" data-ui hidden>
       <div class="modal-card confirm-card">
         <h2 class="panel-h" id="confirm-title">Are you sure?</h2>
+        <div class="confirm-item" id="confirm-item" hidden></div>
         <p class="fine center" id="confirm-text"></p>
         <div class="row">
           <button class="btn btn-white" id="confirm-cancel" data-act="cancel">CANCEL</button>

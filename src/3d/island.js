@@ -36,6 +36,11 @@ const DIM = new THREE.Color().setRGB(0.5, 0.5, 0.52); // linear: about 73% brigh
 const BASE_H = { wood: 0.34, stone: 0, ore: 0.05, sand: 0.04, fiber: 0.02, crystal: 0.16 };
 const TOP_H = { wood: 2.65, stone: 1.25, ore: 1.55, sand: 0.95, fiber: 1.55, crystal: 1.75 };
 const SHADOW_R = { wood: 1.05, stone: 1.0, ore: 0.95, sand: 0.95, fiber: 0.75, crystal: 0.9 };
+// Sight-line blockers: radius of each top and how high above its base the solid part starts (a tree's
+// canopy, not its trunk); BODY_Y are the player's feet, chest and head.
+const HIDE_R = { wood: 1.0, stone: 0.8, ore: 0.75, sand: 0.85, fiber: 0.6, crystal: 0.65 };
+const HIDE_LOW = { wood: 0.5, stone: 0, ore: 0, sand: 0, fiber: 0.1, crystal: 0 };
+const BODY_Y = [0.3, 0.9, 1.6];
 
 const clamp01 = (v) => Math.max(0, Math.min(1, v));
 const smooth = (t) => t * t * (3 - 2 * t);
@@ -55,6 +60,10 @@ const _b = new THREE.Vector3();
 const _n = new THREE.Vector3();
 const _v1 = new THREE.Color();
 const _v2 = new THREE.Color();
+const _hut = new THREE.Box3();
+const _ray = new THREE.Ray();
+const _eye = new THREE.Vector3();
+const _hit = new THREE.Vector3();
 
 // Collects transformed, vertex-coloured primitive pieces (each vertex also gets a glow amount 0..1) and
 // merges them into one non-indexed geometry with position, normal, color and aGlow attributes.
@@ -252,17 +261,33 @@ function isoRadii(sdf, R, targets) {
 
 // ------------------------------------------------------------------ materials
 // Lambert, flat shaded, vertex colours, plus `aGlow` added as emission (glowing veins, crystals, windows).
-function toonMaterial() {
+// With `fade`, a per-instance `aFade` (0..1) dissolves the mesh in an ordered-dither pattern: node tops
+// standing between the camera and the player are seen through (opaque pass, no sorting; shadows stay).
+function toonMaterial(fade = false) {
   const m = new THREE.MeshLambertMaterial({ vertexColors: true, flatShading: true });
   m.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute float aGlow;\nvarying float vGlow;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;');
+      .replace('#include <common>', `#include <common>\nattribute float aGlow;\nvarying float vGlow;${fade ? '\nattribute float aFade;\nvarying float vFade;' : ''}`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>\nvGlow = aGlow;${fade ? '\nvFade = aFade;' : ''}`);
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nvarying float vGlow;')
+      .replace('#include <common>', `#include <common>\nvarying float vGlow;${fade ? '\nvarying float vFade;' : ''}`)
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * vGlow * 1.6;');
+    if (fade) {
+      // 4x4 Bayer threshold from two nested 2x2 patterns.
+      sh.fragmentShader = sh.fragmentShader.replace(
+        'void main() {',
+        `void main() {
+  if (vFade > 0.001) {
+    vec2 q = mod(floor(gl_FragCoord.xy), 4.0);
+    vec2 a = mod(q, 2.0);
+    vec2 b = floor(q * 0.5);
+    float t = 4.0 * (2.0 * a.x + 3.0 * a.y - 4.0 * a.x * a.y) + (2.0 * b.x + 3.0 * b.y - 4.0 * b.x * b.y);
+    if ((t + 0.5) / 16.0 < vFade) discard;
+  }`,
+      );
+    }
   };
-  m.customProgramCacheKey = () => 'outcraft-toon';
+  m.customProgramCacheKey = () => (fade ? 'outcraft-toon-fade' : 'outcraft-toon');
   return m;
 }
 
@@ -708,6 +733,7 @@ export class Island3D {
     this.world = null;
     this.theme = null;
     this.pickTargets = [];
+    this.pickVisible = [];
     this.labels = [];
     this.labelPool = [];
     this.addLabel = this.addLabel.bind(this);
@@ -716,6 +742,7 @@ export class Island3D {
     this.buildMats = [];
 
     this.toon = toonMaterial();
+    this.topMat = toonMaterial(true);
     this.proxyMat = new THREE.MeshBasicMaterial({ visible: false });
     this.clothMat = new THREE.MeshLambertMaterial({ color: '#ff7b2e', flatShading: true });
     this.clothKey = null;
@@ -732,6 +759,10 @@ export class Island3D {
     this.haloMat = new THREE.MeshBasicMaterial({ color: '#ffc83d', toneMapped: false, transparent: true });
     this.orderItem = null;
     this.orderColor = '#ffc83d';
+    this.cardFade = 1;
+    // Where the camera looks at the player from (setViewer), for fading what stands in between.
+    this.viewer = { on: false, x: 0, y: 0, z: 0, px: 0, pz: 0 };
+    this._focusMemo = { node: -1, t: -1 };
   }
 
   // (Re)build every mesh for a sim world; disposes the previous island.
@@ -747,6 +778,9 @@ export class Island3D {
     const sdf = landSDF(shoreMask(world));
     const zc = tileZ(world.hubY);
     this.hubZ = zc;
+    this.viewer.on = false;
+    this.cardFade = 1;
+    this._focusMemo.node = -1;
 
     // Farthest land edge along each angle from the island centre (for the beach, skirt and sea rings).
     const R = new Float32Array(SEG);
@@ -761,7 +795,7 @@ export class Island3D {
     const ground = new Kit(rng);
     this.buildTiles(ground, world, theme, rng);
     ground.addRaw(this.terrainGeometry(theme, sdf, sdfLand, R, isoRadii(sdf, R, TERRAIN_ISO), rng));
-    const groundMesh = this.addMesh(ground.build(), this.toon, false, true);
+    const groundMesh = (this.ground = this.addMesh(ground.build(), this.toon, false, true));
     groundMesh.name = 'ground';
 
     // --- sea
@@ -774,9 +808,10 @@ export class Island3D {
     for (const o of world.obstacles) (o.kind === 'bush' ? style.bush : style.boulder)(props, rng, tileX(o.x), tileZ(o.y), o.kind === 'bush' ? theme.props.bush : theme.props.boulder);
     this.buildDeco(props, world, theme, rng, sdf, R);
     this.buildWorkshop(props, zc, theme, rng);
-    this.addMesh(props.build(), this.toon, true, true).name = 'props';
+    this.props = this.addMesh(props.build(), this.toon, true, true);
+    this.props.name = 'props';
 
-    // --- node tops (one InstancedMesh per resource type) and per-node animation state
+    // --- node tops (one InstancedMesh per resource type, with a per-instance fade) and per-node state
     this.nodeFx = [];
     this.tops = {};
     const byType = {};
@@ -785,15 +820,20 @@ export class Island3D {
       const list = byType[type];
       if (!list) continue;
       const geo = nodeTopGeometry(type, rng);
+      const fade = new THREE.InstancedBufferAttribute(new Float32Array(list.length), 1).setUsage(THREE.DynamicDrawUsage);
+      geo.setAttribute('aFade', fade);
       this.buildGeos.push(geo);
-      const mesh = new THREE.InstancedMesh(geo, this.toon, list.length);
+      const mesh = new THREE.InstancedMesh(geo, this.topMat, list.length);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       mesh.frustumCulled = false;
+      // Instances grow, shrink and bob: a fixed sphere over the whole island keeps tap raycasts valid.
+      mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 1, 0), 20);
+      mesh.userData.ids = list.map((n) => n.id); // instance -> node id (tap picking)
       list.forEach((n, i) => {
         mesh.setColorAt(i, WHITE);
-        this.nodeFx[n.id] = { mesh, i, type, x: tileX(n.x), z: tileZ(n.y), s: 1, ready: true, pop: 0, shake: 0, dim: false, yaw: rng() * TAU, phase: rng() * TAU };
+        this.nodeFx[n.id] = { mesh, i, type, x: tileX(n.x), z: tileZ(n.y), s: 1, ready: true, pop: 0, shake: 0, dim: false, yaw: rng() * TAU, phase: rng() * TAU, fade: 0, fadeTo: 0, fadeAttr: fade };
       });
       g.add(mesh);
       this.tops[type] = mesh;
@@ -1257,12 +1297,17 @@ export class Island3D {
     this.group.add(this.display);
   }
 
-  // Invisible, generous hit shapes for tap-to-target.
+  // Invisible hit shapes for tap-to-target, fitted to what they stand for (a node's full-grown top, the
+  // hut, the two benches and the deck) plus a ground plane; `pickVisible` are the meshes a finger can
+  // actually see (node tops, props, terrain), which play.js prefers over the proxies.
   buildPickTargets(world, zc) {
-    const nodeGeo = new THREE.CylinderGeometry(0.9, 0.9, 2.6, 8);
-    const hubGeo = new THREE.BoxGeometry(6, 3, 2.2);
+    const nodeGeo = {};
+    for (const type of RES_IDS) nodeGeo[type] = new THREE.CylinderGeometry(0.75, 0.75, TOP_H[type] + 0.35, 8);
+    const hutGeo = new THREE.BoxGeometry(2.3, 2.5, 1.5);
+    const benchGeo = new THREE.BoxGeometry(1.6, 1.1, 1.1);
+    const deckGeo = new THREE.BoxGeometry(5.9, 0.35, 1.9);
     const groundGeo = new THREE.PlaneGeometry(TILE * W + 4, TILE * H + 4).rotateX(-Math.PI / 2);
-    this.buildGeos.push(nodeGeo, hubGeo, groundGeo);
+    this.buildGeos.push(...Object.values(nodeGeo), hutGeo, benchGeo, deckGeo, groundGeo);
     const add = (geo, x, y, z, data) => {
       const m = new THREE.Mesh(geo, this.proxyMat);
       m.position.set(x, y, z);
@@ -1271,9 +1316,20 @@ export class Island3D {
       this.group.add(m);
       this.pickTargets.push(m);
     };
-    for (const n of world.nodes) add(nodeGeo, tileX(n.x), 1.3, tileZ(n.y), { kind: 'node', id: n.id });
-    add(hubGeo, 0, 1.5, zc, { kind: 'hub' });
+    for (const n of world.nodes) add(nodeGeo[n.type], tileX(n.x), (TOP_H[n.type] + 0.35) / 2, tileZ(n.y), { kind: 'node', id: n.id });
+    add(hutGeo, 0, 1.25, zc - 0.22, { kind: 'hub' });
+    add(benchGeo, -2, 0.55, zc, { kind: 'hub' });
+    add(benchGeo, 2, 0.55, zc, { kind: 'hub' });
+    add(deckGeo, 0, 0.175, zc, { kind: 'hub' });
     add(groundGeo, 0, GROUND_Y, 0, { kind: 'ground' });
+    this.pickVisible = [...Object.values(this.tops), this.props, this.ground];
+    this.group.updateMatrixWorld(true);
+  }
+
+  // Node id of a hit on a node top (an instance of one of the `tops` meshes), else -1.
+  nodeOfHit(hit) {
+    const ids = hit && hit.object && hit.object.isInstancedMesh && hit.object.userData.ids;
+    return ids && hit.instanceId !== undefined && ids[hit.instanceId] !== undefined ? ids[hit.instanceId] : -1;
   }
 
   // Show the current order item floating above the Workshop (null hides it). color tints the halo/glow.
@@ -1324,8 +1380,11 @@ export class Island3D {
     const respawnMul = (match && match.respawnMul) || 1;
     const need = view.need && view.need.size ? view.need : null;
     const inRace = match ? match.phase === 'race' : false;
+    const vw = this.viewer.on ? this.viewer : null;
+    const kf = 1 - Math.exp(-9 * dt);
 
-    for (const n of nodes) {
+    for (let k = 0; k < nodes.length; k++) {
+      const n = nodes[k];
       const st = this.nodeFx[n.id];
       if (!st) continue;
       const reserved = !!n.reserved;
@@ -1370,6 +1429,13 @@ export class Island3D {
       _s.set(s, s * sy, s);
       st.mesh.setMatrixAt(st.i, _m.compose(_p, _q, _s));
       st.mesh.instanceMatrix.needsUpdate = true;
+      // See-through while it stands between the camera and the player.
+      const fadeTo = vw && this.hides(st, s, vw) ? 0.7 : 0;
+      if (fadeTo !== st.fade) {
+        st.fade = Math.abs(fadeTo - st.fade) < 0.01 ? fadeTo : st.fade + (fadeTo - st.fade) * kf;
+        st.fadeAttr.array[st.i] = st.fade;
+        st.fadeAttr.needsUpdate = true;
+      }
       // Nodes the order does not need are dimmed during the race.
       const dim = inRace && !!need && !need.has(n.type);
       if (dim !== st.dim) {
@@ -1425,9 +1491,12 @@ export class Island3D {
     this.smoke.instanceMatrix.needsUpdate = true;
 
     if (this.display.visible) {
-      // Fade the floating card when the camera comes close (it would fill the view over the Workshop).
+      // Fade the floating card when the camera comes close (it would fill the view over the Workshop) or
+      // when it hangs in front of the player.
       const cd = this.engine.camera.position.distanceTo(this.display.position);
-      const fade = clamp01((cd - 5) / 5) * 0.88 + 0.12;
+      const block = vw && this.cardHides(vw) ? 0.15 : 1;
+      this.cardFade += (block - this.cardFade) * (1 - Math.exp(-6 * dt));
+      const fade = Math.min(clamp01((cd - 5) / 5) * 0.88 + 0.12, this.cardFade);
       this.cardMat.opacity = fade;
       this.haloMat.opacity = fade;
       this.card.rotation.y = t * 0.9;
@@ -1451,6 +1520,140 @@ export class Island3D {
     l.p = pr && typeof pr === 'object' ? pr.p : pr;
     l.pos.set(st.x, GROUND_Y + TOP_H[st.type] + 0.45, st.z);
     this.labels.push(l);
+  }
+
+  // Where the camera looks at the player from, each frame of a race (eye: the camera position; px, pz: the
+  // player's feet). Node tops and the order card in between are faded. setViewer(null) stops it.
+  setViewer(eye, px, pz) {
+    const v = this.viewer;
+    v.on = !!eye && Number.isFinite(px) && Number.isFinite(pz);
+    if (!v.on) return;
+    v.x = eye.x;
+    v.y = eye.y;
+    v.z = eye.z;
+    v.px = px;
+    v.pz = pz;
+  }
+
+  // Does node top st (grown to scale s) cut a sight line from the viewer to the player's feet, chest or
+  // head? The top is a vertical cylinder; only what stands between the camera and the player counts.
+  hides(st, s, v) {
+    const r = HIDE_R[st.type] * Math.max(0.4, s);
+    const bottom = BASE_H[st.type] + HIDE_LOW[st.type] * s;
+    const top = BASE_H[st.type] + (TOP_H[st.type] - BASE_H[st.type]) * s;
+    const dx = v.px - v.x;
+    const dz = v.pz - v.z;
+    const dd = dx * dx + dz * dz;
+    if (dd < 1e-6) return false;
+    const t = ((st.x - v.x) * dx + (st.z - v.z) * dz) / dd;
+    if (t <= 0 || t >= 0.97) return false;
+    const cx = v.x + dx * t - st.x;
+    const cz = v.z + dz * t - st.z;
+    if (cx * cx + cz * cz > r * r) return false;
+    for (let k = 0; k < 3; k++) {
+      const y = v.y + (BODY_Y[k] - v.y) * t;
+      if (y < top && y > bottom) return true;
+    }
+    return false;
+  }
+
+  // Does the floating order display hang in the sight line from the viewer to the player?
+  cardHides(v) {
+    const d = this.display.position;
+    for (let k = 1; k < 3; k++) {
+      const ex = v.px - v.x;
+      const ey = BODY_Y[k] - v.y;
+      const ez = v.pz - v.z;
+      const ll = ex * ex + ey * ey + ez * ez;
+      const t = clamp01(((d.x - v.x) * ex + (d.y - v.y) * ey + (d.z - v.z) * ez) / ll);
+      const qx = v.x + ex * t - d.x;
+      const qy = v.y + ey * t - d.y;
+      const qz = v.z + ez * t - d.z;
+      if (qx * qx + qy * qy + qz * qz < 0.81) return true;
+    }
+    return false;
+  }
+
+  // Smallest extra camera pitch (rad, up to 0.5) that lets the camera see the feet of a player at (x, z)
+  // over the Workshop hut, the sight line clearing the roof ridge by 0.3 m. `cam` gives the follow camera
+  // position for an extra pitch (ThirdPersonCamera.eye). 0 when the hut is not in the way.
+  hutLift(cam, x, z) {
+    const zc = this.hubZ;
+    if (!Number.isFinite(zc) || Math.abs(x) > 5 || Math.abs(z - zc) > 9) return 0;
+    _hut.min.set(-1.35, 0, zc - 1.22);
+    _hut.max.set(1.35, 2.65, zc + 0.78);
+    _ray.origin.set(x, 0.3, z);
+    if (_hut.containsPoint(_ray.origin) || !this.hutBlocks(cam, 0)) return 0;
+    if (this.hutBlocks(cam, 0.5)) return 0.5;
+    let lo = 0;
+    let hi = 0.5;
+    for (let i = 0; i < 6; i++) {
+      const mid = (lo + hi) / 2;
+      if (this.hutBlocks(cam, mid)) lo = mid;
+      else hi = mid;
+    }
+    return hi;
+  }
+
+  hutBlocks(cam, lift) {
+    cam.eye(_eye, lift);
+    const len = _eye.distanceTo(_ray.origin);
+    _ray.direction.copy(_eye).sub(_ray.origin).divideScalar(len || 1);
+    const hit = _ray.intersectBox(_hut, _hit);
+    return !!hit && hit.distanceTo(_ray.origin) < len;
+  }
+
+  // World spot (out.x, out.z) the player is going for next, for the camera; null when there is none. The
+  // Workshop when HOME was pressed or the bag is ready, else the node tapped or walked toward, else the
+  // nearest needed node (kept until another is clearly nearer, so the view does not wander).
+  focusFor(match, out) {
+    const memo = this._focusMemo;
+    if (!match || match.phase !== 'race' || !match.order) {
+      memo.node = -1;
+      return null;
+    }
+    const p = match.player;
+    const w = match.world;
+    const need = match.needInto('player', this._need || (this._need = {}));
+    let total = 0;
+    for (let k = 0; k < RES_IDS.length; k++) total += need[RES_IDS[k]];
+    const home = (p.dest && p.dest.kind === 'hub') || (p.queued && p.queued.kind === 'hub');
+    if (home || p.bag.length >= match.bagSizeFor('player') || (p.bag.length && !total)) {
+      memo.node = -1;
+      out.x = 0;
+      out.z = this.hubZ;
+      return out;
+    }
+    if (p.dest && p.dest.kind === 'tile') {
+      out.x = tileX(p.dest.x);
+      out.z = tileZ(p.dest.y);
+      return out;
+    }
+    let id = match.playerTarget();
+    if (id === null || id === undefined) {
+      const here = idx(p.x, p.y);
+      let best = -1;
+      let bd = 1e9;
+      let kd = 1e9;
+      for (let k = 0; k < w.nodes.length; k++) {
+        const n = w.nodes[k];
+        const d = w.nodeField[n.id][here];
+        if (need[n.type] <= 0 || n.reserved || n.readyAt - match.time > 3 || d < 0) continue;
+        if (d < bd) {
+          bd = d;
+          best = n.id;
+        }
+        if (n.id === memo.node) kd = d;
+      }
+      id = kd < 1e9 && kd - 1.5 < bd ? memo.node : best;
+    }
+    memo.node = id;
+    if (id < 0) return null;
+    const st = this.nodeFx[id];
+    if (!st) return null;
+    out.x = st.x;
+    out.z = st.z;
+    return out;
   }
 
   // Top of a node (for particles and labels).
@@ -1488,6 +1691,9 @@ export class Island3D {
     this.buildMats = [];
     this.group = null;
     this.pickTargets = [];
+    this.pickVisible = [];
+    this.props = null;
+    this.ground = null;
     this.nodeFx = [];
     this.labels.length = 0;
   }
@@ -1495,6 +1701,7 @@ export class Island3D {
   dispose() {
     this.clear();
     this.toon.dispose();
+    this.topMat.dispose();
     this.proxyMat.dispose();
     this.clothMat.dispose();
     this.smokeMat.dispose();

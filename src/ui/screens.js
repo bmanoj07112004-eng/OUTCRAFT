@@ -15,6 +15,15 @@ const $ = (id) => document.getElementById(id);
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ESC[c]);
 export const fmt = (n) => (Number.isFinite(+n) ? Math.round(+n).toLocaleString('en-US') : '0');
+/** Compact number for tight spots (the currency pills): 9,999 · 12.3K · 123K · 1.2M. Rounds down, so it
+ * never shows more than the player has. */
+export function fmtShort(n) {
+  const v = Math.max(0, Math.floor(+n || 0));
+  if (v < 10000) return fmt(v);
+  const [d, u] = v < 1e6 ? [1e3, 'K'] : v < 1e9 ? [1e6, 'M'] : [1e9, 'B'];
+  const x = v / d;
+  return `${x < 100 ? Math.floor(x * 10) / 10 : Math.floor(x)}${u}`;
+}
 const pct = (x) => `${Math.round((+x || 0) * 100)}%`;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const cap1 = (s) => s.charAt(0).toUpperCase() + s.slice(1);
@@ -92,6 +101,7 @@ const SPRITE = `<svg xmlns="http://www.w3.org/2000/svg" id="oc-sprite" aria-hidd
 <symbol id="ic-look" viewBox="0 0 32 32"><path d="M16 2.5l4.5 5.5h-3v6.5H24v-3l5.5 4.5-5.5 4.5v-3h-6.5V24h3L16 29.5 11.5 24h3v-6.5H8v3L2.5 16 8 11.5v3h6.5V8h-3z" fill="currentColor"/></symbol>
 <symbol id="ic-refresh" viewBox="0 0 32 32"><path d="M25 12a10 10 0 1 0 1 7" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round"/><path d="M27 4v9h-9" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 <symbol id="ic-exit" viewBox="0 0 32 32"><path d="M13 5H7a2 2 0 0 0-2 2v18a2 2 0 0 0 2 2h6" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/><path d="M14 16h13M21 9.5l6.5 6.5-6.5 6.5" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+<symbol id="ic-flame" viewBox="0 0 32 32"><path d="M16 2.5c1.6 5 7.5 8.4 9.3 13.8 1.9 5.9-1.8 12.2-9.3 12.2S4.8 22.7 6.6 17c.9-2.9 3-4.6 4.1-7.2.9 2.3 1.2 3.9 2.6 5.2C13.4 10.6 13.6 6.3 16 2.5z" fill="url(#g-lava)" stroke="#c0301a" stroke-width="1.4" stroke-linejoin="round"/><path d="M16 15.5c2.2 3 4.3 4.6 4.3 7.4a4.3 4.3 0 0 1-8.6 0c0-2.3 2.5-4.2 4.3-7.4z" fill="#fff3a0"/></symbol>
 <symbol id="ic-share" viewBox="0 0 32 32"><circle cx="24" cy="7" r="4" fill="currentColor"/><circle cx="8" cy="16" r="4" fill="currentColor"/><circle cx="24" cy="25" r="4" fill="currentColor"/><path d="M11 14.5l10-6M11 17.5l10 6" stroke="currentColor" stroke-width="2.8"/></symbol>
 <symbol id="d-tree" viewBox="0 0 64 64"><ellipse cx="32" cy="60" rx="17" ry="3.5" fill="#000" opacity=".16"/><rect x="28" y="38" width="8" height="21" rx="3" fill="#8a5a2b"/><circle cx="32" cy="25" r="18" fill="#3fa84a"/><circle cx="21" cy="33" r="12" fill="#389c43"/><circle cx="43" cy="33" r="12" fill="#33903e"/><circle cx="25" cy="19" r="7.5" fill="#72d46a" opacity=".85"/><circle cx="38" cy="30" r="3" fill="#ff5a5a"/><circle cx="24" cy="36" r="3" fill="#ff5a5a"/></symbol>
 <symbol id="d-flower" viewBox="0 0 64 64"><path d="M32 60V34" stroke="#3a9c44" stroke-width="4" stroke-linecap="round"/><path d="M32 50c-8-2-12-8-10-12 6 0 10 6 10 12z" fill="#4fbf4a"/><g fill="#ff8ac2" stroke="#e0508f" stroke-width="1.2"><circle cx="32" cy="17" r="8"/><circle cx="42.5" cy="25" r="8"/><circle cx="38.5" cy="37" r="8"/><circle cx="25.5" cy="37" r="8"/><circle cx="21.5" cy="25" r="8"/></g><circle cx="32" cy="28" r="6.5" fill="#ffd23d" stroke="#e39a00" stroke-width="1.2"/></symbol>
@@ -211,12 +221,19 @@ function callbackFor(hostId, act) {
   return typeof fn === 'function' ? fn : null;
 }
 
+// A modal ignores pointer taps (backdrop and buttons) this long after it opens: the second click of a
+// double-click on the button that opened it must not close it or press what is under the pointer.
+const MODAL_GUARD_MS = 400;
+const modalOpenedAt = Object.create(null);
+const freshModal = (host) => host && host.classList.contains('modal') && performance.now() - (modalOpenedAt[host.id] || 0) < MODAL_GUARD_MS;
+
 function wire() {
   if (wired) return;
   wired = true;
   document.addEventListener('click', (e) => {
     // A tap on a modal's backdrop closes it when the modal has a close action.
     if (e.target.classList && e.target.classList.contains('modal')) {
+      if (freshModal(e.target)) return;
       const close = callbackFor(e.target.id, 'close');
       if (close) close();
       return;
@@ -225,6 +242,7 @@ function wire() {
     if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return;
     const host = el.closest('[data-ui]');
     if (!host) return;
+    if (e.detail > 0 && freshModal(host)) return;
     const act = el.dataset.act;
     if (hooks.onAction) hooks.onAction(host.id, act, el.dataset.arg);
     if (!el.hasAttribute('data-quiet')) play('ui');
@@ -287,6 +305,7 @@ const modalId = (id) => (id.startsWith('modal-') ? id : `modal-${id}`);
 export function openModal(id) {
   const el = $(modalId(id));
   if (!el || !el.hidden) return;
+  modalOpenedAt[el.id] = performance.now();
   el.hidden = false;
   document.body.classList.add('has-modal');
   play('pop');
@@ -337,14 +356,40 @@ function resolveConfirm(v) {
   confirmResolve = null;
   if (r) r(v);
 }
-/** Generic yes/no dialog. Resolves true on OK, false on cancel/close. */
-export function confirmDialog({ title = 'Are you sure?', text = '', ok = 'OK', cancel = 'CANCEL', danger = false } = {}) {
+/**
+ * Generic yes/no dialog. Resolves true on OK, false on cancel/close. Like every modal it ignores taps in
+ * its first 400 ms, so a double tap on BUY cannot confirm a purchase by accident.
+ * @param {object} [o]
+ * @param {string} [o.title]
+ * @param {string} [o.text]
+ * @param {string} [o.ok]       OK label (default 'OK', or 'BUY <price>' for a purchase)
+ * @param {string} [o.cancel]
+ * @param {boolean} [o.danger]  red OK button
+ * @param {{name: string, price: {coins?: number, gems?: number}, icon?: string, image?: string,
+ *          count?: number, have?: number}} [o.buy]  purchase: shows the item card (image URL, or a
+ *          sprite / booster icon name) with its price, and what you have of that currency
+ */
+export function confirmDialog({ title = 'Are you sure?', text = '', ok = '', cancel = 'CANCEL', danger = false, buy = null } = {}) {
   resolveConfirm(false);
   $('confirm-title').textContent = title;
   $('confirm-text').textContent = text;
+  $('confirm-text').hidden = !text;
+  const item = $('confirm-item');
+  if (item) {
+    item.hidden = !buy;
+    if (buy) {
+      const bi = BOOSTER_ICON[buy.icon];
+      const art = buy.image ? `<img alt="" src="${esc(buy.image)}">` : bi || hasIcon(buy.icon) ? svgIcon(bi || buy.icon, 'ci-ic') : '';
+      const cur = buy.price?.gems ? 'gems' : 'coins';
+      item.innerHTML = `<span class="ci-art">${art}${buy.count > 1 ? `<i class="ci-count">×${fmt(buy.count)}</i>` : ''}</span>
+        <div class="ci-txt"><b>${esc(buy.name || '')}</b>${buy.have != null ? `<small>You have ${svgIcon(cur === 'gems' ? 'gem' : 'coin', 'ci-cur')}${fmt(buy.have)}</small>` : ''}</div>
+        <span class="ci-price">${priceHTML(buy.price)}</span>`;
+    }
+  }
   const okBtn = $('confirm-ok');
-  okBtn.textContent = ok;
-  okBtn.className = `btn ${danger ? 'btn-red' : 'btn-green'}`;
+  if (buy && !ok) okBtn.innerHTML = `<span class="btn-main">BUY ${priceHTML(buy.price)}</span>`;
+  else okBtn.textContent = ok || 'OK';
+  okBtn.className = `btn ${danger ? 'btn-red' : buy ? 'btn-orange' : 'btn-green'}`;
   $('confirm-cancel').textContent = cancel;
   on('modal-confirm', {}, {
     onOk: () => {
@@ -375,7 +420,7 @@ function setText(id, text) {
 
 /**
  * Currency bar (hearts, coins, gems). Cheap to call every second: only changed text is written, and a
- * value that went up bumps its pill.
+ * value that went up bumps its pill. Big balances are shown compact (12.3K, 1.2M).
  * @param {object} vm
  * @param {number} vm.coins
  * @param {number} vm.gems
@@ -386,16 +431,40 @@ function setText(id, text) {
  */
 export function renderTopBar(vm, cb = {}) {
   on('topbar', cb);
+  const names = { coins: 'Coins', gems: 'Gems', hearts: 'Hearts' };
   for (const k of ['coins', 'gems', 'hearts']) {
     const v = Math.max(0, Math.floor(+vm[k] || 0));
     if (tbLast[k] === v) continue;
     const up = tbLast[k] !== undefined && v > tbLast[k];
     tbLast[k] = v;
-    setText(`tb-${k}`, fmt(v));
-    if (up) bump($(`tb-${k}`)?.closest('.cur'));
+    setText(`tb-${k}`, fmtShort(v));
+    const pill = $(`tb-${k}`)?.closest('.cur');
+    if (pill) pill.setAttribute('aria-label', `${names[k]}: ${fmt(v)}`);
+    if (up) bump(pill);
   }
-  const full = vm.hearts >= (vm.heartsMax || 5);
-  setText('tb-hearts-t', full || !vm.heartsText ? 'FULL' : vm.heartsText);
+  tbLast.full = vm.hearts >= (vm.heartsMax || 5);
+  setText('tb-hearts-t', tbLast.full || !vm.heartsText ? 'FULL' : vm.heartsText);
+  if (tbLast.full) setFullAt(null);
+}
+
+// "Full at 14:32" under the hearts pill (title screen only; set by renderTitle, cleared when full).
+function setFullAt(text) {
+  const el = $('tb-hearts-full');
+  if (!el) return;
+  el.hidden = !text;
+  if (text) setText('tb-hearts-full', `Full at ${text}`);
+}
+
+/**
+ * Update every visible heart countdown in place (top bar, shop Hearts tab, level popup, level result)
+ * without re-rendering anything: call it once a second, and re-render only when the heart count changes.
+ * @param {string} text  e.g. '12:34' ('' when the hearts are full)
+ */
+export function updateHeartsCountdown(text) {
+  text = text || '';
+  if (!tbLast.full) setText('tb-hearts-t', text || 'FULL');
+  if (!text) return;
+  for (const el of document.querySelectorAll('[data-hcd]')) if (el.textContent !== text) el.textContent = text;
 }
 
 // ------------------------------------------------------------------ loading / no WebGL
@@ -429,11 +498,22 @@ export function showNoWebGL(reason = '') {
  * @param {{greet: string, lines: string[], notebook: number, nextRival?: string}|null} [vm.dossier]
  *                                       "Your rivals remember you" card (null hides it)
  * @param {string} [vm.docsHref]         design docs link
+ * @param {number} [vm.dailyStreak]      daily reward streak in days (a flame chip on the Daily button; 0 hides it)
+ * @param {string|null} [vm.heartsFullAt] clock time all hearts are back, e.g. '14:32' (shown under the
+ *                                       hearts pill; null when full)
  * @param {object} cb  onPlay, onDaily, onQuick, onShop, onDailyReward, onAchievements, onCodex,
  *                     onSettings, onHow, onAbout
  */
 export function renderTitle(vm, cb = {}) {
   on('screen-title', cb);
+  const streak = Math.max(0, Math.floor(+vm.dailyStreak || 0));
+  const sk = $('title-streak');
+  if (sk) {
+    sk.hidden = !streak;
+    sk.innerHTML = streak ? `${svgIcon('flame', 'st-ic')}<b>${streak}</b>` : '';
+    sk.closest('.side-btn')?.setAttribute('aria-label', streak ? `Daily reward, ${streak}-day streak` : 'Daily reward');
+  }
+  setFullAt(vm.heartsFullAt || null);
   setText('title-level', `Level ${vm.level || 1}${vm.levelName ? ` · ${vm.levelName}` : ''}`);
   setText('title-daily-sub', vm.dailySub || '');
   setText('title-quick-sub', vm.quickSub || '');
@@ -685,7 +765,9 @@ let popupSel = { id: null, set: new Set() };
 
 /**
  * Level popup (opens the modal): rival vs you, goal, twist, star targets, boosters, PLAY.
- * Re-render after buying a booster: the selection is kept while the level id stays the same.
+ * Re-render after buying a booster: the selection is kept while the level id stays the same (call
+ * clearBoosterSelection() when a match starts, so the next open starts from vm.selected again).
+ * Landscape phones get two columns (level and goal | targets, boosters and PLAY).
  * @param {object} vm
  * @param {number} vm.id
  * @param {string} vm.name
@@ -706,7 +788,8 @@ let popupSel = { id: null, set: new Set() };
  *         price: {coins?: number, gems?: number}, canAfford: boolean}>} vm.boosters
  * @param {string[]} [vm.selected]        booster ids selected when the popup first opens
  * @param {number} vm.hearts
- * @param {string} [vm.heartsText]        time to the next heart
+ * @param {string} [vm.heartsText]        time to the next heart (kept live by updateHeartsCountdown)
+ * @param {string|null} [vm.heartsFullAt] clock time all hearts are back (shown with 0 hearts)
  * @param {object} cb  onPlay(selectedIds), onClose(), onBuyBooster(id) (count was 0),
  *                     onNoHearts() (PLAY pressed with 0 hearts)
  */
@@ -731,34 +814,41 @@ export function renderLevelPopup(vm, cb = {}) {
   const noHearts = !(vm.hearts > 0);
   card.style.setProperty('--r1', vm.boss ? '#ff5a6e' : st.rib[0]);
   card.style.setProperty('--r2', vm.boss ? '#c0223a' : st.rib[1]);
+  const heartsLine = noHearts
+    ? `Out of hearts: next one in <b data-hcd>${esc(vm.heartsText || '--:--')}</b>${vm.heartsFullAt ? ` · all back at <b>${esc(vm.heartsFullAt)}</b>` : ''}`
+    : 'PLAY costs a heart. Pass the level and you get it back.';
   card.innerHTML = `
     <button class="ibtn ibtn-close" data-act="close" aria-label="Close">${svgIcon('close')}</button>
     <div class="ribbon ${vm.boss ? 'boss' : ''}"><span>${vm.boss ? 'BOSS · ' : ''}LEVEL ${vm.id}</span></div>
-    <div class="lp-world">${esc(vm.worldName)} · ${esc(vm.name)}${vm.hard ? ' <i class="tag-hard">HARD</i>' : ''}</div>
-    <div class="lp-best">${starsRow(vm.stars || 0, 3, 'lp-star')}</div>
-    <div class="vs-row">
-      <div class="vs-side">${avatar({ ...(vm.player || {}), name: 'You', color: vm.player?.color || '#3d7bff' }, 'av-lg')}<b>YOU</b></div>
-      <div class="vs-mid">VS</div>
-      <div class="vs-side">${avatar(vm.rival, 'av-lg')}<b style="color:${esc(vm.rival.color)}">${esc(vm.rival.name)}</b><small>${esc(vm.rival.title || '')}</small></div>
+    <div class="lp-a">
+      <div class="lp-world">${esc(vm.worldName)} · ${esc(vm.name)}${vm.hard ? ' <i class="tag-hard">HARD</i>' : ''}</div>
+      <div class="lp-best">${starsRow(vm.stars || 0, 3, 'lp-star')}</div>
+      <div class="vs-row">
+        <div class="vs-side">${avatar({ ...(vm.player || {}), name: 'You', color: vm.player?.color || '#3d7bff' }, 'av-lg')}<b>YOU</b></div>
+        <div class="vs-mid">VS</div>
+        <div class="vs-side">${avatar(vm.rival, 'av-lg')}<b style="color:${esc(vm.rival.color)}">${esc(vm.rival.name)}</b><small>${esc(vm.rival.title || '')}</small></div>
+      </div>
+      <div class="lp-goal">${svgIcon('target', 'lp-ic')}<div><small>GOAL</small><p>${esc(vm.goal)}</p></div></div>
+      ${vm.twist ? `<div class="lp-twist">${svgIcon('bolt', 'lp-ic')}<div><small>TWIST · ${esc(vm.twist.name)}</small><p>${esc(vm.twist.desc)}</p></div></div>` : ''}
+      ${vm.timeLimit ? `<div class="lp-twist lp-time">${svgIcon('clock', 'lp-ic lp-clock')}<div><small>TIME LIMIT</small><p>${Math.floor(vm.timeLimit / 60)}:${String(Math.round(vm.timeLimit % 60)).padStart(2, '0')} of race time.</p></div></div>` : ''}
+      ${vm.note ? `<div class="lp-note">${esc(vm.note)}</div>` : ''}
     </div>
-    <div class="lp-goal">${svgIcon('target', 'lp-ic')}<div><small>GOAL</small><p>${esc(vm.goal)}</p></div></div>
-    ${vm.twist ? `<div class="lp-twist">${svgIcon('bolt', 'lp-ic')}<div><small>TWIST · ${esc(vm.twist.name)}</small><p>${esc(vm.twist.desc)}</p></div></div>` : ''}
-    ${vm.timeLimit ? `<div class="lp-twist lp-time">${svgIcon('clock', 'lp-ic lp-clock')}<div><small>TIME LIMIT</small><p>${Math.floor(vm.timeLimit / 60)}:${String(Math.round(vm.timeLimit % 60)).padStart(2, '0')} of race time.</p></div></div>` : ''}
-    ${vm.note ? `<div class="lp-note">${esc(vm.note)}</div>` : ''}
-    <div class="lp-targets">
-      <div class="lpt">${starsRow(1, 1, 'lpt-s')}<b>WIN</b></div>
-      <div class="lpt">${starsRow(2, 2, 'lpt-s')}<b>${fmt(t[1])}</b></div>
-      <div class="lpt">${starsRow(3, 3, 'lpt-s')}<b>${fmt(t[2])}</b></div>
+    <div class="lp-b">
+      <div class="lp-targets">
+        <div class="lpt">${starsRow(1, 1, 'lpt-s')}<b>WIN</b></div>
+        <div class="lpt">${starsRow(2, 2, 'lpt-s')}<b>${fmt(t[1])}</b></div>
+        <div class="lpt">${starsRow(3, 3, 'lpt-s')}<b>${fmt(t[2])}</b></div>
+      </div>
+      ${vm.best ? `<div class="lp-bestscore">Best score <b>${fmt(vm.best)}</b></div>` : ''}
+      <div class="lp-boost-h">BOOSTERS <small>${selNames.length ? esc(selNames.map((b) => b.name).join(' + ')) : 'tap to use'}</small></div>
+      <div class="lp-boosts">${boosters}</div>
     </div>
-    ${vm.best ? `<div class="lp-bestscore">Best score <b>${fmt(vm.best)}</b></div>` : ''}
-    <div class="lp-boost-h">BOOSTERS <small>${selNames.length ? esc(selNames.map((b) => b.name).join(' + ')) : 'tap to use'}</small></div>
-    <div class="lp-boosts">${boosters}</div>
     <div class="lp-foot">
-      <button class="btn btn-green btn-xl lp-play ${noHearts ? 'nohearts' : ''}" data-act="play">
+      <button class="btn btn-xl lp-play ${noHearts ? 'btn-red nohearts' : 'btn-green'}" data-act="play">
         <span class="btn-main">${noHearts ? 'NO HEARTS' : 'PLAY'}</span>
-        <span class="lp-heart">${svgIcon('heart')}<b>${noHearts ? esc(vm.heartsText || '') : '1'}</b></span>
+        <span class="lp-heart">${svgIcon(noHearts ? 'heart-empty' : 'heart')}<b ${noHearts ? 'data-hcd' : ''}>${noHearts ? esc(vm.heartsText || '') : '1'}</b></span>
       </button>
-      <p class="lp-fine">Hearts are only lost if you fail or quit.</p>
+      <p class="lp-fine">${heartsLine}</p>
     </div>`;
   on('modal-level', cb, {
     onClose: () => {
@@ -792,6 +882,12 @@ export function renderLevelPopup(vm, cb = {}) {
     },
   });
   openModal('level');
+}
+
+/** Forget the level popup's booster selection (call when a match starts): the next open of any level,
+ * including a RETRY of the same one, starts from its vm.selected. */
+export function clearBoosterSelection() {
+  popupSel = { id: null, set: new Set() };
 }
 
 /** Booster ids currently selected in the level popup. */
@@ -862,7 +958,8 @@ function countUp(el, to, dur, tick) {
 
 /**
  * Level result (opens the modal). Win: stars pop in one by one, the score counts up, rewards and
- * badges appear. Fail: the heart lost, why, a tip.
+ * badges appear. Fail: the heart lost, why, a tip. The buttons stay in view (sticky footer); landscape
+ * phones get two columns.
  * @param {object} vm
  * @param {boolean} vm.passed
  * @param {number} vm.id
@@ -874,16 +971,23 @@ function countUp(el, to, dur, tick) {
  * @param {boolean} [vm.firstClear]
  * @param {number} [vm.coins]            coins earned
  * @param {number} [vm.gems]             gems earned
+ * @param {{id: string, name: string, icon?: string, count?: number}|string|null} [vm.booster]
+ *                                       booster granted (boss first clear): a reward chip; a bare id works too
+ * @param {boolean} [vm.replayCapped]    a replay that paid no coins: today's replay coins are used up
+ * @param {number} [vm.replaysPaid]      replays that paid coins today (with replayCap: "Replay coins 2/3 today")
+ * @param {number} [vm.replayCap]        paid replays allowed per day
  * @param {boolean} [vm.hasNext]         NEXT LEVEL is available
  * @param {{name: string, color: string, portrait?: string}} vm.rival
  * @param {string} [vm.playerPortrait]
  * @param {{player: number, rival: number}} [vm.matchStars]  orders won by each side
  * @param {string} [vm.quote]            the rival's line
  * @param {string} [vm.reason]           fail: what went wrong ("FOX won 3-1", "Time ran out"...)
+ * @param {string|null} [vm.goalMissed]  fail after winning the match: the level goal that was missed
+ *                                       (the card says GOAL MISSED instead of LEVEL FAILED)
  * @param {string} [vm.tip]              fail: advice from what happened
  * @param {boolean} [vm.heartLost]
  * @param {number} [vm.hearts]           hearts left
- * @param {string} [vm.heartsText]       time to the next heart
+ * @param {string} [vm.heartsText]       time to the next heart (kept live by updateHeartsCountdown)
  * @param {NotebookVM} [vm.notebook]     "what the rival learned" (collapsible)
  * @param {string[]} [vm.notes]          short extra lines (Codex unlocks, new Tells, goals to claim)
  * @param {object} cb  onNext(), onReplay(), onMap(), onRetry()
@@ -900,19 +1004,30 @@ export function renderLevelResult(vm, cb = {}) {
     ? `<details class="lr-learn"><summary>${svgIcon('eye', 'lr-eye')} What ${esc(vm.notebook.rivalName)} learned about you</summary><div class="notebook">${notebookHTML(vm.notebook)}</div></details>`
     : '';
   if (vm.passed) {
+    const booster = typeof vm.booster === 'string' ? { id: vm.booster, name: '' } : vm.booster || null;
+    const cap = +vm.replayCap || 0;
+    const count = cap ? ` (${Math.min(+vm.replaysPaid || 0, cap)}/${cap} today)` : '';
+    let replayLine = '';
+    if (vm.replayCapped) replayLine = `<div class="lr-capped">${svgIcon('clock', 'lr-cap-ic')}<span>Replay coins are used up for today${count}. They pay again tomorrow; new stars still pay gems.</span></div>`;
+    else if (cap && !vm.firstClear) replayLine = `<div class="lr-replays">Replay coins${count}</div>`;
+    const rewards = [
+      vm.coins ? `<div class="rw rw-coin">${svgIcon('coin')}<b>+<span id="lr-coins">0</span></b></div>` : '',
+      vm.gems ? `<div class="rw rw-gem">${svgIcon('gem')}<b>+<span id="lr-gems">0</span></b></div>` : '',
+      booster ? `<div class="rw rw-boost">${boosterIcon(booster)}<b>+${booster.count > 1 ? booster.count : 1}${booster.name ? ` <small>${esc(booster.name)}</small>` : ''}</b></div>` : '',
+    ].join('');
     card.className = 'modal-card result-card win';
     card.innerHTML = `
       <div class="lr-rays"></div>
       <div class="ribbon"><span>LEVEL COMPLETE!</span></div>
-      <div class="lr-sub">Level ${vm.id} · ${esc(vm.name)}</div>
-      <div class="lr-stars">${[0, 1, 2].map((i) => `<span class="lr-star s${i}">${svgIcon('star-empty', 'lr-empty')}${i < vm.stars ? svgIcon('star', 'lr-full') : ''}</span>`).join('')}</div>
-      <div class="lr-score"><small>SCORE</small><b id="lr-score">0</b></div>
-      <div class="lr-badges">${vm.newBest ? '<i class="badge-new">NEW BEST!</i>' : vm.best ? `<i class="badge-best">BEST ${fmt(vm.best)}</i>` : ''}${vm.firstClear ? '<i class="badge-first">FIRST CLEAR</i>' : ''}</div>
-      <div class="lr-rewards">
-        ${vm.coins ? `<div class="rw rw-coin">${svgIcon('coin')}<b>+<span id="lr-coins">0</span></b></div>` : ''}
-        ${vm.gems ? `<div class="rw rw-gem">${svgIcon('gem')}<b>+<span id="lr-gems">0</span></b></div>` : ''}
+      <div class="lr-a">
+        <div class="lr-sub">Level ${vm.id} · ${esc(vm.name)}</div>
+        <div class="lr-stars">${[0, 1, 2].map((i) => `<span class="lr-star s${i}">${svgIcon('star-empty', 'lr-empty')}${i < vm.stars ? svgIcon('star', 'lr-full') : ''}</span>`).join('')}</div>
+        <div class="lr-score"><small>SCORE</small><b id="lr-score">0</b></div>
+        <div class="lr-badges">${vm.newBest ? '<i class="badge-new">NEW BEST!</i>' : vm.best ? `<i class="badge-best">BEST ${fmt(vm.best)}</i>` : ''}${vm.firstClear ? '<i class="badge-first">FIRST CLEAR</i>' : ''}</div>
+        ${rewards ? `<div class="lr-rewards">${rewards}</div>` : ''}
+        ${replayLine}
       </div>
-      ${notes}${vsLine}${quote}${nb}
+      <div class="lr-b">${notes}${vsLine}${quote}${nb}</div>
       <div class="lr-btns">
         ${vm.hasNext ? `<button class="btn btn-green btn-lg" data-act="next"><span class="btn-main">NEXT LEVEL ${svgIcon('play', 'bi-inline')}</span></button>` : ''}
         <div class="row">
@@ -935,22 +1050,27 @@ export function renderLevelResult(vm, cb = {}) {
       card.querySelector('.lr-rewards')?.classList.add('on');
       if (vm.coins) countUp($('lr-coins'), vm.coins, 700, (k) => k < 1 && Math.random() < 0.25 && play('coin'));
       if (vm.gems) countUp($('lr-gems'), vm.gems, 500);
-      if (vm.coins || vm.gems) play('coin');
+      if (vm.coins || vm.gems || booster) play('coin');
     });
     later(tScore + 900, () => card.querySelector('.lr-badges')?.classList.add('on'));
   } else {
-    card.className = 'modal-card result-card fail';
+    card.className = `modal-card result-card fail ${vm.goalMissed ? 'goal-missed' : ''}`;
     card.innerHTML = `
-      <div class="ribbon"><span>LEVEL FAILED</span></div>
-      <div class="lr-sub">Level ${vm.id} · ${esc(vm.name)}</div>
-      ${vm.heartLost ? `<div class="lr-heart">${svgIcon('heart-broken', 'lr-hb')}<b>-1</b></div><div class="lr-hearts">${vm.hearts ?? 0} left${vm.heartsText ? ` · next in ${esc(vm.heartsText)}` : ''}</div>` : ''}
-      ${vm.reason ? `<div class="lr-reason">${esc(vm.reason)}</div>` : ''}
-      ${vm.tip ? `<div class="lr-tip">${svgIcon('help', 'lr-tip-ic')}<p><b>TIP</b> ${esc(vm.tip)}</p></div>` : ''}
-      <div class="lr-score small"><small>SCORE</small><b>${fmt(vm.score || 0)}</b></div>
-      ${notes}${vsLine}${quote}${nb}
+      <div class="ribbon"><span>${vm.goalMissed ? 'GOAL MISSED' : 'LEVEL FAILED'}</span></div>
+      <div class="lr-a">
+        <div class="lr-sub">Level ${vm.id} · ${esc(vm.name)}</div>
+        ${vm.heartLost ? `<div class="lr-heart">${svgIcon('heart-broken', 'lr-hb')}<b>-1</b></div><div class="lr-hearts">${vm.hearts ?? 0} left${vm.heartsText ? ` · next in <b data-hcd>${esc(vm.heartsText)}</b>` : ''}</div>` : ''}
+        ${vm.goalMissed ? `<div class="lr-goal">${svgIcon('target', 'lr-goal-ic')}<p><small>GOAL</small>${esc(vm.goalMissed)}</p></div>` : ''}
+        ${vm.reason ? `<div class="lr-reason">${esc(vm.reason)}</div>` : ''}
+        <div class="lr-score small"><small>SCORE</small><b>${fmt(vm.score || 0)}</b></div>
+      </div>
+      <div class="lr-b">
+        ${vm.tip ? `<div class="lr-tip">${svgIcon('help', 'lr-tip-ic')}<p><b>TIP</b> ${esc(vm.tip)}</p></div>` : ''}
+        ${notes}${vsLine}${quote}${nb}
+      </div>
       <div class="lr-btns">
         <button class="btn btn-green btn-lg" data-act="retry"><span class="btn-main">RETRY</span><span class="lp-heart">${svgIcon('heart')}<b>1</b></span></button>
-        <button class="btn btn-white" data-act="map">${svgIcon('flag', 'bi-inline')} MAP</button>
+        <button class="btn btn-white btn-lg" data-act="map">${svgIcon('flag', 'bi-inline')} MAP</button>
       </div>`;
     later(200, () => play('fail'));
     if (vm.heartLost) later(700, () => play('heart'));
@@ -979,7 +1099,9 @@ export function renderLevelResult(vm, cb = {}) {
  * @param {NotebookVM} [vm.notebook]
  * @param {{text: string, sub: string}} [vm.quote]
  * @param {string|null} [vm.daily]       daily status line (null for Quick Race)
- * @param {number} [vm.coins]            coins earned
+ * @param {number|{coins: number, capped?: boolean, paidToday?: number, cap?: number}} [vm.coins]
+ *                                       coins earned; the object form adds the daily limit ("+10 coins (3/5
+ *                                       today)", or "Daily coin limit reached" when capped and nothing paid)
  * @param {boolean} [vm.canNext]         NEXT RIVAL available
  * @param {boolean} [vm.isDaily]
  * @param {object} cb  onAgain(), onNext(), onShare(), onCodex(), onMenu()
@@ -1000,8 +1122,12 @@ export function renderResults(vm, cb = {}) {
   const s = vm.stats || {};
   $('res-stats').innerHTML = `<span><b>${s.snatched || 0}</b> snatched from you</span><span><b>${s.outread || 0}</b> times you got there first</span><span><b>${s.fooled || 0}</b> fake-outs</span><span><b>${Math.round(s.seconds || 0)}</b>s</span>${vm.tip ? `<div class="tip">Tip: ${esc(vm.tip)}</div>` : ''}`;
   const coins = $('res-coins');
-  coins.hidden = !vm.coins;
-  if (vm.coins) coins.innerHTML = `${svgIcon('coin')}<b>+${fmt(vm.coins)}</b>`;
+  const c = vm.coins && typeof vm.coins === 'object' ? vm.coins : { coins: +vm.coins || 0 };
+  const today = c.cap ? `${Math.min(c.paidToday || 0, c.cap)}/${c.cap} today` : '';
+  coins.hidden = !(c.coins > 0 || c.capped);
+  coins.classList.toggle('capped', !(c.coins > 0));
+  if (c.coins > 0) coins.innerHTML = `${svgIcon('coin')}<b>+${fmt(c.coins)}</b>${today ? `<small>${today}</small>` : ''}`;
+  else if (c.capped) coins.innerHTML = `${svgIcon('clock', 'rc-ic')}<span>Daily coin limit reached${today ? ` (${today})` : ''}: wins pay coins again tomorrow.</span>`;
   const un = $('res-unlock');
   un.hidden = !vm.unlocked;
   if (vm.unlocked) un.innerHTML = `New rival unlocked: <b style="color:${esc(vm.unlocked.color)}">${esc(vm.unlocked.name)}</b>, ${esc(vm.unlocked.title)}`;
@@ -1090,6 +1216,8 @@ let shopTab = 'skins';
  *                     onEquip(id), onRefill(), onBack()
  */
 export function renderShop(vm, cb = {}) {
+  // A new tab, or the shop opening, starts at the top (the panes share one scroller).
+  if ((vm.tab && vm.tab !== shopTab) || current !== 'screen-shop') resetShopScroll();
   if (vm.tab) shopTab = vm.tab;
   const skins = vm.skins || [];
   const sel = skins.find((s) => s.id === vm.selectedSkin) || skins.find((s) => s.equipped) || skins[0];
@@ -1122,7 +1250,7 @@ export function renderShop(vm, cb = {}) {
   $('shop-boost-list').innerHTML = (vm.boosters || [])
     .map(
       (b) => `<div class="boost-card"><span class="bk-ic">${boosterIcon(b)}<i class="bk-count">×${b.count}</i></span>
-      <div class="bk-txt"><b>${esc(b.name)}</b><p>${esc(b.desc)}</p></div>
+      <div class="bk-txt"><b>${esc(b.name)}</b>${b.pack > 1 ? `<i class="bk-pack">PACK OF ${b.pack}</i>` : ''}<p>${esc(b.desc)}</p></div>
       <button class="btn ${b.canAfford ? 'btn-orange' : 'btn-grey'} btn-sm" data-act="buy" data-arg="${esc(b.id)}"><span class="btn-main">${b.pack > 1 ? `×${b.pack} ` : ''}${priceHTML(b.price)}</span></button></div>`,
     )
     .join('');
@@ -1133,7 +1261,7 @@ export function renderShop(vm, cb = {}) {
   for (let i = 0; i < h.max; i++) hearts += svgIcon(i < h.n ? 'heart' : 'heart-empty', 'hh');
   const full = h.n >= h.max;
   $('shop-hearts-card').innerHTML = `<div class="hc-row">${hearts}</div>
-    <p class="hc-txt">${full ? 'Your hearts are full. Go play!' : `Next heart in <b>${esc(h.nextText || '--:--')}</b>. Hearts refill on their own.`}</p>
+    <p class="hc-txt">${full ? 'Your hearts are full. Go play!' : `Next heart in <b data-hcd>${esc(h.nextText || '--:--')}</b>. Hearts refill on their own.`}</p>
     <button class="btn ${!full && h.canRefill ? 'btn-pink' : 'btn-grey'} btn-lg" data-act="refill" ${full ? 'disabled' : ''}><span class="btn-main">REFILL ${svgIcon('gem', 'pi')}<b>${fmt(h.refillGems)}</b></span></button>`;
   $('shop-exchange').innerHTML = (vm.exchange || [])
     .map(
@@ -1145,7 +1273,6 @@ export function renderShop(vm, cb = {}) {
 
   on('screen-shop', cb, {
     onTab: (tab) => {
-      shopTab = tab;
       renderShop({ ...vm, tab }, cb);
       if (cb.onTab) cb.onTab(tab);
     },
@@ -1172,6 +1299,11 @@ export function renderShop(vm, cb = {}) {
       if (cb.onRefill) cb.onRefill();
     },
   });
+}
+
+function resetShopScroll() {
+  const body = document.querySelector('#screen-shop .scr-body');
+  if (body) body.scrollTop = 0;
 }
 
 /** The canvas the 3D skin Preview should render into (always the same element). */
@@ -1208,7 +1340,7 @@ export function renderDailyReward(vm, cb = {}) {
   $('daily-card').innerHTML = `
     <button class="ibtn ibtn-close" data-act="close" aria-label="Close">${svgIcon('close')}</button>
     <div class="ribbon"><span>DAILY REWARD</span></div>
-    <p class="dr-sub">Come back every day. Day 7 is special!</p>
+    <p class="dr-sub">Come back every day: day 7 is special! Miss a day and you start again at day 1.</p>
     <div class="dr-grid">${tiles}</div>
     ${vm.canClaim ? `<button class="btn btn-green btn-xl" data-act="claim"><span class="btn-main">CLAIM DAY ${vm.day}</span></button>` : `<div class="dr-next">${svgIcon('clock', 'dr-clock')} Next reward in <b>${esc(vm.nextText || 'tomorrow')}</b></div>`}`;
   on('modal-daily', cb, {

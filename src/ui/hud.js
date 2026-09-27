@@ -5,6 +5,8 @@
 // Floating labels projected from 3D (pills, speech bubbles, glass %) use an immediate-mode pool:
 // beginLabels(), label(...) for each visible label, endLabels() hides the ones not refreshed.
 // One-shot effects (score floaters, captions, flying icons) use the Web Animations API.
+// Layout layer: the screen rects of the HUD panels are cached, and labels, floaters, the edge arrow and
+// the toast slot are placed clear of them (isOverPanel() exposes the same test for taps).
 
 import { RES, COMPONENTS, ITEM_BY_ID } from '../data.js';
 import { svgIcon, artURL, ensureIcons, esc, fmt } from './screens.js';
@@ -13,12 +15,25 @@ const W_TILES = 9;
 const H_TILES = 13;
 const MM_COLORS = { wood: '#3fbf4f', stone: '#b8c0cc', ore: '#ff8a3d', sand: '#ffd86b', fiber: '#b6f06a', crystal: '#4fe3ff' };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const TOAST_PRI = { low: 0, normal: 1, high: 2 };
+const TOAST_STALE = [1500, 5000, 12000]; // a queued toast older than this (per priority) is dropped
+const TAP_GUARD_MS = 400; // the VS splash ignores taps this long after it opens (double-click carry-over)
+const POP_STACK_MS = 300;
 
 function el(tag, cls, html) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   if (html != null) e.innerHTML = html;
   return e;
+}
+
+// Two lines for a long caption: at ' · ' when there is one, otherwise at the space nearest the middle.
+function splitCaption(t) {
+  const dot = t.indexOf(' · ');
+  if (dot > 0) return [t.slice(0, dot), t.slice(dot + 3)];
+  let best = -1;
+  for (let i = t.indexOf(' '); i > 0; i = t.indexOf(' ', i + 1)) if (best < 0 || Math.abs(i - t.length / 2) < Math.abs(best - t.length / 2)) best = i;
+  return best > 0 ? [t.slice(0, best), t.slice(best + 1)] : null;
 }
 
 function avatarInner(p) {
@@ -51,9 +66,18 @@ export class HUD {
     this.mm = { world: null, base: null, lastDraw: 0, colors: null };
     this.score = { target: 0, shown: 0, raf: 0 };
     this.vsState = null;
+    this.vsAt = 0;
     this.bagLast = [];
     this.madeLast = [];
     this.ptrLast = { x: NaN, y: NaN, text: null, off: null, ang: NaN };
+    this.edgeLast = { x: NaN, y: NaN, ang: NaN, color: null, icon: null };
+    this.toastCur = null; // { text, kind, dur, pri, at, shownAt, min, leaving }
+    this.toastQ = [];
+    this.toastT = 0;
+    this.popRecent = [];
+    this.rectCache = null;
+    this.rectAt = 0;
+    this.chrome = true;
     this._tick = () => this._tickScore();
     this._build();
     this._onResize = () => this.resize();
@@ -100,11 +124,26 @@ export class HUD {
     this.actions.append(this.homeBtn, this.interBtn);
     this.ptr = el('div', 'hud-pointer', `<span class="hp-hand">${svgIcon('hand', 'hp-ic')}</span><span class="hp-arrow">${svgIcon('back', 'hp-ic')}</span><b class="hp-lbl"></b>`);
     this.ptr.hidden = true;
+    this.edge = el('div', 'hud-edge', `<span class="he-rot"><i class="he-tip"></i>${svgIcon('back', 'he-chev')}</span><span class="he-disc"></span>`);
+    this.edge.hidden = true;
     this.vsEl = el('div', 'hud-vs');
     this.vsEl.hidden = true;
-    r.append(top, this.labels, this.bottom, this.actions, this.toastEl, this.cap, this.ptr, this.vsEl);
+    // Labels sit under the panels: a label that still overlaps one is covered, never painted over it.
+    r.append(this.labels, top, this.bottom, this.actions, this.edge, this.toastEl, this.cap, this.ptr, this.vsEl);
     this.cap.hidden = true;
     this.toastEl.hidden = true;
+
+    // Panels take the pointer so a tap on them never reaches the 3D view (tap-to-target) behind.
+    const block = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    for (const p of [this.card, this.meter, this.timer, this.mmWrap, this.bottom, ...this.root.querySelectorAll('.hud-av-wrap, .hud-stars')]) {
+      p.classList.add('hud-panel');
+      p.addEventListener('pointerdown', block);
+    }
+    // The order card expands (bigger icons, part names) while tapped; it closes by itself.
+    this.card.addEventListener('pointerdown', () => this._toggleCard());
 
     const press = (btn, fn) => {
       btn.addEventListener('pointerdown', (e) => {
@@ -125,23 +164,40 @@ export class HUD {
     press(this.interBtn, () => this.cb.onInteract && this.cb.onInteract());
     this.vsEl.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      // The second click of a double-click on PLAY / REMATCH must not skip the splash it opened.
+      if (performance.now() - this.vsAt < TAP_GUARD_MS) return;
       this.hideVs(true);
     });
   }
 
   // ---------------------------------------------------------------- lifecycle
 
-  /** Show or hide the whole HUD. */
+  /** Show or hide the whole HUD. Hiding it also brings the controls back (see setChrome). */
   show(on = true) {
     this.root.hidden = !on;
     if (on) this.resize();
+    else this.setChrome(true);
   }
 
   get visible() {
     return !this.root.hidden;
   }
 
-  /** Clear transient things (labels, floaters, captions, toast, pointer, flying icons). */
+  /**
+   * Show or hide the controls: HOME, GRAB, the bag, the hint line and the resting joystick (e.g. during
+   * the VS splash, the fly-in and the victory orbit). Stars, order card, meter and pause stay.
+   * @param {boolean} on
+   */
+  setChrome(on = true) {
+    on = !!on;
+    if (on === this.chrome) return;
+    this.chrome = on;
+    this.root.classList.toggle('chrome-off', !on);
+    document.body.classList.toggle('hud-chrome-off', !on);
+    this.rectCache = null;
+  }
+
+  /** Clear transient things (labels, floaters, captions, toasts, pointer, edge arrow, flying icons). */
   reset() {
     for (const t of this.timers) clearTimeout(t);
     this.timers.clear();
@@ -150,8 +206,15 @@ export class HUD {
     this.beginLabels();
     this.endLabels();
     this.cap.hidden = true;
+    this.cap.style.top = '';
     this.toastEl.hidden = true;
+    this.toastCur = null;
+    this.toastQ.length = 0;
+    this.toastT = 0;
+    this.popRecent.length = 0;
     this.pointer(null);
+    this.edgeArrow(null);
+    this._toggleCard(false);
     // A pending vs() promise resolves here; the overlay is removed at once (it takes pointer events).
     this.hideVs(false);
     for (const t of this.timers) clearTimeout(t);
@@ -160,6 +223,7 @@ export class HUD {
     this.last = {};
     this.bagLast.length = 0;
     this.madeLast.length = 0;
+    this.rectCache = null;
   }
 
   _later(ms, fn) {
@@ -262,7 +326,10 @@ export class HUD {
    */
   setOrder(o) {
     if (!o || !ITEM_BY_ID[o.item]) {
-      if (this.last.orderItem !== null) this.card.hidden = true;
+      if (this.last.orderItem !== null) {
+        this.card.hidden = true;
+        this.rectCache = null;
+      }
       this.last.orderItem = null;
       return;
     }
@@ -284,7 +351,8 @@ export class HUD {
         })
         .join('');
       this.parts = this.card.querySelectorAll('.oc-part');
-      this._anim(this.card, [{ transform: 'scale(.6)', opacity: 0 }, { transform: 'scale(1.06)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)' }], { duration: 380, easing: 'ease-out' });
+      this.rectCache = null;
+      this._anim(this.card, [{ transform: 'scale(.6)', opacity: 0 }, { transform: 'scale(1.06)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)' }], { duration: 380, easing: 'ease-out' }, () => (this.rectCache = null));
     }
     const made = o.made;
     const n = this.parts.length;
@@ -354,14 +422,20 @@ export class HUD {
   /** Seconds of race time left (null hides the timer). Turns red and pulses under 10 s. */
   setTimer(secondsLeft) {
     if (secondsLeft == null || !Number.isFinite(secondsLeft)) {
-      if (!this.timer.hidden) this.timer.hidden = true;
+      if (!this.timer.hidden) {
+        this.timer.hidden = true;
+        this.rectCache = null;
+      }
       this.last.timer = null;
       return;
     }
     const s = Math.max(0, Math.ceil(secondsLeft));
     if (this.last.timer === s) return;
     this.last.timer = s;
-    this.timer.hidden = false;
+    if (this.timer.hidden) {
+      this.timer.hidden = false;
+      this.rectCache = null;
+    }
     this.timer.lastChild.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
     this.timer.classList.toggle('low', s <= 10);
   }
@@ -403,6 +477,7 @@ export class HUD {
   setHint(text) {
     text = text || '';
     if (text === this.last.hint) return;
+    if (!text !== !this.last.hint) this.rectCache = null;
     this.last.hint = text;
     this.hint.textContent = text;
     this.hint.hidden = !text;
@@ -609,27 +684,44 @@ export class HUD {
       r.key = key;
       r.text = r.style = r.color = null;
       r.x = r.y = NaN;
+      r.w = 0;
       r.el.hidden = false;
       this.labByKey.set(key, r);
       this.labActive.push(r);
     }
     r.seen = this.frame;
+    let sized = r.w > 0;
     if (r.style !== style) {
       r.el.className = `hl hl-${style}`;
       r.style = style;
+      r.down = false;
+      sized = false;
     }
     if (r.text !== text) {
       r.span.textContent = text;
       r.text = text;
+      sized = false;
     }
     if (r.color !== color) {
       r.el.style.setProperty('--c', color || '');
       r.color = color;
     }
-    if (!(Math.abs(r.x - x) < 0.3 && Math.abs(r.y - y) < 0.3)) {
-      r.el.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`;
-      r.x = x;
-      r.y = y;
+    if (!sized) {
+      // One layout read per text change: the label's box (plus its tail) for the panel test.
+      r.w = r.span.offsetWidth;
+      r.h = r.span.offsetHeight + (style === 'bubble' ? 12 : style === 'pill' ? 10 : 5);
+      r.x = r.y = NaN;
+    }
+    // Clear of the HUD panels: under a top panel the label hangs below it with its tail flipped up.
+    const p = this._avoid(x, y, r.w, r.h);
+    if (p.down !== r.down) {
+      r.el.classList.toggle('hl-down', p.down);
+      r.down = p.down;
+    }
+    if (!(Math.abs(r.x - p.x) < 0.3 && Math.abs(r.y - p.y) < 0.3)) {
+      r.el.style.transform = `translate3d(${p.x.toFixed(1)}px,${p.y.toFixed(1)}px,0)`;
+      r.x = p.x;
+      r.y = p.y;
     }
   }
 
@@ -660,6 +752,27 @@ export class HUD {
    */
   pop(text, x, y, style = 'score', dur = 1200) {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    const big = style !== 'score';
+    // Box estimate (no layout read): ~0.6 em per character of the 22-26 px outlined text.
+    const w = String(text).length * (big && style !== 'info' ? 16 : 13) + 12;
+    const p = this._avoid(x, y, w, 44, true);
+    x = p.x;
+    y = p.y;
+    // Floaters that land in the same spot within a moment stack upward, whatever order they came in.
+    const now = performance.now();
+    const recent = this.popRecent;
+    for (let i = recent.length - 1; i >= 0; i--) if (now - recent[i].t > POP_STACK_MS) recent.splice(i, 1);
+    for (let pass = 0; pass < 6; pass++) {
+      let moved = false;
+      for (const q of recent) {
+        if (Math.abs(q.x - x) < (q.w + w) / 2 && Math.abs(q.y - y) < 28) {
+          y = q.y - 28;
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    recent.push({ x, y, w, t: now });
     let e = this.popFree.pop();
     if (!e) {
       e = el('div', 'hl', '<span></span>');
@@ -668,7 +781,6 @@ export class HUD {
     e.className = `hl hl-pop hl-${style}`;
     e.firstChild.textContent = text;
     e.hidden = false;
-    const big = style !== 'score';
     const t = (dy, s) => `translate3d(${x.toFixed(1)}px,${(y - dy).toFixed(1)}px,0) scale(${s})`;
     this._anim(
       e,
@@ -696,12 +808,17 @@ export class HUD {
    */
   caption(text, { sub = '', color = '#ffc629', dur = 1400, size = 1 } = {}) {
     const c = this.cap;
-    c.firstChild.textContent = text;
+    const main = c.firstChild;
+    text = String(text);
+    main.textContent = text;
     c.lastChild.textContent = sub;
     c.lastChild.hidden = !sub;
     c.style.setProperty('--cc', color);
     c.style.setProperty('--cs', String(size));
+    c.style.top = '';
     c.hidden = false;
+    this._fitCaption(text, size);
+    this._clearCaptionOfToast();
     if (this.capAnim) this.capAnim.cancel();
     this.capAnim = this._anim(
       c,
@@ -721,38 +838,151 @@ export class HUD {
     );
   }
 
+  // Fit the caption to the screen width: shrink it, and break a long one into two lines first (at ' · '
+  // or the space nearest the middle) when shrinking alone would make it small.
+  _fitCaption(text, size) {
+    const main = this.cap.firstChild;
+    const avail = Math.min(window.innerWidth * 0.9, 1100) - 12;
+    let w = main.scrollWidth;
+    if (w <= avail) return;
+    let k = avail / w;
+    const lines = k < 0.72 ? splitCaption(text) : null;
+    if (lines) {
+      main.textContent = '';
+      main.append(lines[0], document.createElement('br'), lines[1]);
+      w = main.scrollWidth;
+      k = avail / w;
+    }
+    this.cap.style.setProperty('--cs', String(+(size * Math.min(1, k)).toFixed(3)));
+  }
+
+  // A caption never covers the toast: it moves down below it (at most to 60% of the height).
+  _clearCaptionOfToast() {
+    const cur = this.toastCur;
+    if (!cur || cur.leaving) return;
+    const tb = this.toastEl.getBoundingClientRect();
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const w = this.cap.offsetWidth;
+    const h = this.cap.offsetHeight;
+    const cy = H * 0.4;
+    if (cy + h / 2 < tb.top - 6 || cy - h / 2 > tb.bottom + 6 || (W + w) / 2 < tb.left || (W - w) / 2 > tb.right) return;
+    this.cap.style.top = `${Math.round(Math.min(H * 0.6, tb.bottom + 10 + h / 2))}px`;
+  }
+
   /**
-   * Toast line (e.g. the honest snatch reason).
+   * Toast line (e.g. the honest snatch reason), shown one at a time in a slot clear of the player and
+   * the thumbs: under the top HUD in portrait, beside the order card on landscape phones.
+   * A higher priority replaces the current toast at once. An equal one waits until the current toast
+   * had its minimum time on screen (longer texts get longer); a 'normal' one waits behind a 'high' one;
+   * a 'low' one is dropped while anything else shows. A repeat of the text on screen or waiting is ignored.
    * @param {string} text
-   * @param {{kind?: ''|'bad'|'good'|'info', dur?: number}} [o]
+   * @param {{kind?: ''|'bad'|'good'|'info', dur?: number, priority?: 'low'|'normal'|'high'}} [o]
    */
-  toast(text, { kind = '', dur = 3000 } = {}) {
-    const t = this.toastEl;
-    t.textContent = text;
-    t.className = `hud-toast ${kind}`;
-    t.hidden = false;
+  toast(text, { kind = '', dur = 3000, priority = 'normal' } = {}) {
+    if (!text) return;
+    text = String(text);
+    const now = performance.now();
+    const t = { text, kind, dur: Math.max(800, +dur || 3000), pri: TOAST_PRI[priority] ?? 1, at: now };
+    const cur = this.toastCur;
+    if ((cur && cur.text === text && !cur.leaving) || this.toastQ.some((q) => q.text === text)) return;
+    if (!cur) return this._toastShow(t);
+    if (!cur.leaving && t.pri > cur.pri) return this._toastShow(t);
+    if (!cur.leaving && t.pri === 0) return;
+    const q = this.toastQ;
+    let i = q.length;
+    while (i > 0 && q[i - 1].pri < t.pri) i--;
+    q.splice(i, 0, t);
+    // At most 3 waiting: drop the oldest of the lowest priority (the queue is sorted by priority).
+    if (q.length > 3) q.splice(q.findIndex((k) => k.pri === q[q.length - 1].pri), 1);
+    this._toastSchedule();
+  }
+
+  /** True while a toast is on screen. */
+  get toastActive() {
+    return !!this.toastCur;
+  }
+
+  _toastShow(t) {
+    const node = this.toastEl;
     if (this.toastAnim) this.toastAnim.cancel();
-    this.toastAnim = this._anim(
-      t,
-      [
-        { transform: 'translate(-50%, 12px) scale(.9)', opacity: 0 },
-        { transform: 'translate(-50%, 0) scale(1)', opacity: 1, offset: Math.min(0.2, 200 / dur) },
-        { transform: 'translate(-50%, 0) scale(1)', opacity: 1, offset: 0.9 },
-        { transform: 'translate(-50%, 0) scale(1)', opacity: 0 },
-      ],
-      { duration: dur, easing: 'ease-out' },
-      (a) => {
-        if (this.toastAnim !== a) return;
-        t.hidden = true;
-        this.toastAnim = null;
-      },
-    );
+    t.shownAt = performance.now();
+    // Minimum time on screen before an equal priority may follow: enough to read it.
+    t.min = Math.min(t.dur, Math.max(1500, 900 + t.text.length * 38));
+    t.leaving = false;
+    this.toastCur = t;
+    node.textContent = t.text;
+    node.className = `hud-toast ${t.kind}`;
+    node.hidden = false;
+    this._toastSlot();
+    this.toastAnim = this._anim(node, [{ transform: 'translate(-50%, 10px) scale(.9)', opacity: 0 }, { transform: 'translate(-50%, 0) scale(1)', opacity: 1 }], { duration: 200, easing: 'ease-out' });
+    this._toastSchedule();
+  }
+
+  // (Re)arm the timer that ends the current toast: its full duration, or its minimum time when an
+  // equal or higher priority toast is waiting.
+  _toastSchedule() {
+    const cur = this.toastCur;
+    if (!cur || cur.leaving) return;
+    const next = this.toastQ[0];
+    const end = cur.shownAt + (next && next.pri >= cur.pri ? cur.min : cur.dur);
+    if (this.toastT) {
+      clearTimeout(this.toastT);
+      this.timers.delete(this.toastT);
+    }
+    this.toastT = this._later(Math.max(0, end - performance.now()), () => {
+      this.toastT = 0;
+      this._toastLeave();
+    });
+  }
+
+  _toastLeave() {
+    const cur = this.toastCur;
+    if (!cur || cur.leaving) return;
+    cur.leaving = true;
+    if (this.toastAnim) this.toastAnim.cancel();
+    this.toastAnim = this._anim(this.toastEl, [{ opacity: 1 }, { opacity: 0 }], { duration: 180, easing: 'ease-in', fill: 'forwards' }, (a) => {
+      if (this.toastAnim !== a) return;
+      this.toastAnim = null;
+      this.toastCur = null;
+      const now = performance.now();
+      let next;
+      while ((next = this.toastQ.shift()) && now - next.at > TOAST_STALE[next.pri]);
+      if (next) this._toastShow(next);
+      else this.toastEl.hidden = true;
+      a.cancel(); // drop the faded-out fill
+    });
+  }
+
+  // Toast slot: below every top panel it would overlap; on landscape phones, in the free column right of
+  // the order card instead (the player stands in the middle, the thumbs own the bottom corners).
+  _toastSlot() {
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const R = this._rects();
+    let left = W / 2;
+    let maxW = Math.min(W * 0.92, 460);
+    let top = 8;
+    if (H < 560 && W > H * 1.1 && !this.card.hidden) {
+      const l = this.card.getBoundingClientRect().right + 10;
+      const r = this.riv.getBoundingClientRect().left - 10;
+      if (r - l >= 200) {
+        left = (l + r) / 2;
+        maxW = Math.min(r - l, 360);
+      }
+    }
+    for (const k of R) if (k.top && k.r > left - maxW / 2 && k.l < left + maxW / 2) top = Math.max(top, k.b + 8);
+    const s = this.toastEl.style;
+    s.left = `${Math.round(left)}px`;
+    s.top = `${Math.round(top)}px`;
+    s.maxWidth = `${Math.round(maxW)}px`;
   }
 
   // ---------------------------------------------------------------- VS splash
 
   /**
-   * VS splash at match start. Resolves when it ends or is tapped away.
+   * VS splash at match start. Resolves when it ends or is tapped away (taps in its first 400 ms are
+   * ignored, so the second click of a double-click on PLAY does not skip it).
    * @param {object} v
    * @param {{portrait?: string, color?: string}} [v.player]
    * @param {{name: string, color: string, portrait?: string, title?: string}} v.rival
@@ -774,6 +1004,7 @@ export class HUD {
       <div class="vs-skip">Tap to skip</div>`;
     this.vsEl.hidden = false;
     this.vsEl.classList.remove('out');
+    this.vsAt = performance.now();
     return new Promise((resolve) => {
       this.vsState = { resolve, t: this._later(v.dur || 2600, () => this.hideVs(false)) };
     });
@@ -867,6 +1098,161 @@ export class HUD {
     lbl.hidden = !text;
   }
 
+  // ---------------------------------------------------------------- edge arrow, layout layer
+
+  /**
+   * Arrow at the screen edge pointing at an off-screen target (e.g. the Workshop when the bag is ready).
+   * Call every frame with the target's screen point (engine.worldToScreen); hidden while the point is on
+   * screen. Placed clear of the HUD panels.
+   * @param {{x: number, y: number, color?: string, icon?: string, visible?: boolean, behind?: boolean}|null} t
+   *        visible === false forces the arrow (e.g. worldToScreen said not visible); behind: the point is
+   *        behind the camera (its projection is mirrored), so the arrow points the other way; icon: a
+   *        sprite icon name shown in the disc (e.g. 'home')
+   */
+  edgeArrow(t) {
+    const node = this.edge;
+    if (!t || !Number.isFinite(t.x) || !Number.isFinite(t.y) || this.root.hidden) {
+      if (!node.hidden) node.hidden = true;
+      return;
+    }
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const onScreen = t.visible !== false && !t.behind && t.x >= 0 && t.x <= W && t.y >= 0 && t.y <= H;
+    if (onScreen) {
+      if (!node.hidden) node.hidden = true;
+      return;
+    }
+    const cx = W / 2;
+    const cy = H / 2;
+    let dx = t.x - cx;
+    let dy = t.y - cy;
+    if (t.behind) {
+      dx = -dx;
+      dy = -dy;
+    }
+    if (dx * dx + dy * dy < 1) dy = 1;
+    const m = 34;
+    const k = Math.min((W / 2 - m) / Math.max(1e-3, Math.abs(dx)), (H / 2 - m) / Math.max(1e-3, Math.abs(dy)));
+    let x = cx + dx * k;
+    let y = cy + dy * k;
+    // Slide in toward the centre until the disc is clear of every panel.
+    const len = Math.hypot(dx, dy);
+    const ux = dx / len;
+    const uy = dy / len;
+    for (let i = 0; i < 80 && this._hitsPanel(x, y, 28); i++) {
+      x -= ux * 8;
+      y -= uy * 8;
+    }
+    const ang = Math.atan2(uy, ux);
+    const color = t.color || '#ffc629';
+    const icon = t.icon || '';
+    const L = this.edgeLast;
+    if (!node.hidden && Math.abs(L.x - x) < 0.5 && Math.abs(L.y - y) < 0.5 && Math.abs(L.ang - ang) < 0.01 && L.color === color && L.icon === icon) return;
+    if (L.color !== color) node.style.setProperty('--c', color);
+    if (L.icon !== icon) {
+      node.lastChild.innerHTML = icon ? svgIcon(icon, 'he-ic') : '';
+      node.classList.toggle('has-ic', !!icon);
+    }
+    Object.assign(L, { x, y, ang, color, icon });
+    node.hidden = false;
+    node.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`;
+    node.firstChild.style.transform = `rotate(${ang.toFixed(3)}rad)`;
+  }
+
+  /** True when the screen point is over a HUD panel (order card, meter, timer, minimap, avatars and
+   * stars, bag and hint, buttons): a tap there is meant for the HUD, not the island behind it. */
+  isOverPanel(clientX, clientY) {
+    return this._hitsPanel(clientX, clientY, 0);
+  }
+
+  _hitsPanel(x, y, pad) {
+    if (this.root.hidden) return false;
+    const R = this._rects();
+    for (let i = 0; i < R.length; i++) {
+      const r = R[i];
+      if (x + pad >= r.l && x - pad <= r.r && y + pad >= r.t && y - pad <= r.b) return true;
+    }
+    return false;
+  }
+
+  // Viewport rects of the visible panels, cached (re-measured after a change, or once a second).
+  // Top panels are measured from layout (offsets), so entrance and pulse animations do not skew them.
+  _rects() {
+    const now = performance.now();
+    if (this.rectCache && now - this.rectAt < 1000) return this.rectCache;
+    this.rectAt = now;
+    const out = (this.rectCache = []);
+    if (this.root.hidden) return out;
+    const H = window.innerHeight;
+    if (!this.topPanels) {
+      this.topPanels = [this.card, this.meter, this.timer, this.mmWrap, this.pauseBtn, ...this.root.querySelectorAll('.hud-av-wrap, .hud-stars')];
+      this.bottomPanels = [this.hint, this.bag, this.homeBtn, this.interBtn];
+    }
+    for (const n of this.topPanels) {
+      if (n.hidden || !n.offsetWidth) continue;
+      let l = 0;
+      let t = 0;
+      for (let p = n; p; p = p.offsetParent) {
+        l += p.offsetLeft;
+        t += p.offsetTop;
+      }
+      out.push({ l, t, r: l + n.offsetWidth, b: t + n.offsetHeight, top: true });
+    }
+    if (this.chrome) {
+      for (const n of this.bottomPanels) {
+        if (n.hidden) continue;
+        const b = n.getBoundingClientRect();
+        if (b.width > 0) out.push({ l: b.left, t: b.top, r: b.right, b: b.bottom, top: b.top + b.bottom < H });
+      }
+    }
+    return out;
+  }
+
+  // Move a box (w x h, bottom-centre anchor x, y) out of the panels. A top panel pushes it below: a label
+  // then hangs under its anchor (down = true), a floater (rise) keeps rising from below the panel. A
+  // bottom panel pushes it above.
+  _avoid(x, y, w, h, rise = false) {
+    const o = this._avoidOut || (this._avoidOut = { x: 0, y: 0, down: false });
+    o.x = x;
+    o.y = y;
+    o.down = false;
+    const R = this._rects();
+    const hw = w / 2 + 3;
+    for (let pass = 0; pass < 4; pass++) {
+      const top = o.down ? o.y : o.y - h;
+      const bot = o.down ? o.y + h : o.y;
+      let hit = null;
+      for (let i = 0; i < R.length; i++) {
+        const r = R[i];
+        if (x + hw > r.l && x - hw < r.r && bot > r.t - 3 && top < r.b + 3) {
+          hit = r;
+          break;
+        }
+      }
+      if (!hit) break;
+      if (!hit.top) {
+        o.y = hit.t - 4;
+        o.down = false;
+      } else if (rise) o.y = hit.b + 4 + h;
+      else {
+        o.y = hit.b + 4;
+        o.down = true;
+      }
+    }
+    return o;
+  }
+
+  // Tap-to-expand order card (bigger recipe with part names); closes by itself after a few seconds.
+  _toggleCard(open = !this.card.classList.contains('oc-open')) {
+    if (this.cardT) {
+      clearTimeout(this.cardT);
+      this.timers.delete(this.cardT);
+      this.cardT = 0;
+    }
+    this.card.classList.toggle('oc-open', open);
+    if (open) this.cardT = this._later(4000, () => this._toggleCard(false));
+  }
+
   // ---------------------------------------------------------------- flying icons and pulses
 
   _targetRect(target) {
@@ -953,6 +1339,8 @@ export class HUD {
   /** Re-measure after a layout change (window resize is handled automatically). */
   resize() {
     this.btnRects = null;
+    this.rectCache = null;
+    if (this.toastCur && !this.toastCur.leaving) this._toastSlot();
     if (!this.mm.world) return;
     const w = this.mmCanvas.width;
     const h = this.mmCanvas.height;

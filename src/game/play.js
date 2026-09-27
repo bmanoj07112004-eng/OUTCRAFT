@@ -5,11 +5,13 @@
 //
 // Stages of a match: 'vs' (splash) -> 'intro' (camera fly-in; the order is posted during it) -> 'play'
 // (the race, orders one after another) -> 'end' (victory orbit, then the results).
+// Hearts: PLAY spends one (economy.startLevelHeart), a pass gives it back; a quit, a restart or a reload
+// keeps it spent. A ranked Daily is used up the moment it starts (store.markDailyAttempt).
 
 import * as THREE from 'three';
 import { Match } from '../match.js';
 import { PlayerModel } from '../model.js';
-import { RIVALS, RES, COMPONENTS, SCORE } from '../data.js';
+import { RIVALS, RES, COMPONENTS, SCORE, ITEM_BY_ID } from '../data.js';
 import { idx } from '../world.js';
 import { THEMES } from '../3d/themes.js';
 import { tilePos } from '../3d/island.js';
@@ -18,7 +20,7 @@ import { levelById, matchConfig, levelPassed, WORLDS } from '../levels.js';
 import * as eco from '../economy.js';
 import * as store from '../storage.js';
 import { sfx, buzz, setIntensity, suspendAudio, unlockAudio, startMusic } from '../audio.js';
-import { app, clock, later, cancelLater, shiftLater, STEP, pick, pct, playerPortrait, rivalPortrait, equippedSkin } from './app.js';
+import { app, clock, later, cancelLater, stopClock, commit, reloadSave, STEP, pick, pct, playerPortrait, rivalPortrait, equippedSkin } from './app.js';
 import * as attract from './attract.js';
 import * as menus from './menus.js';
 
@@ -26,6 +28,8 @@ const VS_MS = 2400; // VS splash
 const INTRO_S = 3.0; // camera fly-in (s)
 const STEP_DELAY = 350; // ms into the fly-in before the order is posted
 const END_MS = 2900; // victory orbit before the results
+const GUARD_MS = 400; // taps this soon after the VS splash opens are the tail of a double tap
+const TUTOR_HOLD = 600; // s: in the tutorial the rival waits out the whole first order
 const PLAYER_BLUE = '#3d7bff';
 const ORDER_LINES = [(n) => `I need a ${n}!`, (n) => `One ${n}, please!`, (n) => `Who can make me a ${n}?`, (n) => `A ${n}! Quick!`];
 // Quick Race islands wear the world where each rival rules; the Daily one rotates by date.
@@ -35,6 +39,8 @@ let P = null; // the match being played (see begin())
 const _v = new THREE.Vector3();
 const _s = { x: 0, y: 0, visible: false };
 const _move = { x: 0, z: 0 };
+const _c = new THREE.Vector3();
+const _arrow = { x: 0, y: 0, color: '' };
 
 const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0);
 
@@ -58,21 +64,29 @@ function labelX(x, y, half) {
   return lo > hi ? W / 2 : Math.max(lo, Math.min(hi, x));
 }
 
+// Floating labels skip spots under the HUD panels (order card, meter, minimap, buttons...).
+function label(key, x, y, text, style, color) {
+  if (!app.hud.isOverPanel(x, y)) app.hud.label(key, x, y, text, style, color);
+}
+
 // ------------------------------------------------------------------ starting a match
 
-// Adventure: needs a heart (only lost on a fail or a quit); boosters are consumed now.
+// Adventure: PLAY spends a heart (given back if the level is passed) and the chosen boosters.
 export function startLevel(id, boosterIds = []) {
   const level = levelById(id);
-  const st = app.state;
-  if (!level || id > st.adventure.unlocked) return false;
-  if (!eco.canStartLevel(st, Date.now())) {
+  if (!level || id > app.state.adventure.unlocked) return false;
+  const now = Date.now();
+  let used = [];
+  const boosts = commit((st) => {
+    if (!eco.startLevelHeart(st, id, now)) return null;
+    used = [...new Set(boosterIds || [])].filter((b) => eco.BOOSTERS[b] && eco.boosterCount(st, b) > 0);
+    return eco.useBoosters(st, used);
+  });
+  if (!boosts) {
     menus.noHearts(level);
     return false;
   }
   const cfg = matchConfig(level);
-  const used = [...new Set(boosterIds || [])].filter((b) => eco.BOOSTERS[b] && eco.boosterCount(st, b) > 0);
-  const boosts = eco.useBoosters(st, used);
-  store.save(st);
   begin({
     kind: 'level',
     level,
@@ -80,7 +94,7 @@ export function startLevel(id, boosterIds = []) {
     rival: cfg.rival,
     rivalIndex: cfg.rivalIndex,
     twist: cfg.twist,
-    options: { ...cfg.options, ...boosts, autoReturn: st.settings.autoReturn },
+    options: { ...cfg.options, ...boosts, autoReturn: app.state.settings.autoReturn },
     theme: WORLDS[level.world].theme,
     boosters: used,
   });
@@ -88,9 +102,11 @@ export function startLevel(id, boosterIds = []) {
 }
 
 // Daily Commission: same island, orders and twist for everyone today; FOX with no memory of you.
+// The first attempt of the day is the ranked one, and it counts from the moment it starts.
 export function startDaily() {
   const d = store.todaysDaily();
-  const daily = { ...d, ranked: !app.state.daily.results[d.key] };
+  const ranked = !app.blind && commit((st) => store.markDailyAttempt(st, d));
+  const daily = { ...d, ranked };
   begin({
     kind: 'daily',
     daily,
@@ -129,16 +145,22 @@ function begin(cfg) {
   if (app.blind) rivalDef = { ...rivalDef, experts: [], heading: 0, steal: 0, deny: 0 };
   // The Daily rival never uses your saved memory, so everyone's daily result is comparable.
   const model = cfg.kind === 'daily' ? new PlayerModel() : app.model;
-  const match = new Match({ seed: cfg.seed, rival: rivalDef, model, twist: cfg.twist, options: cfg.options });
+  // A match quit before it saw anything gives the notebook back as it was (beginMatch fades it).
+  const snap = model === app.model ? JSON.parse(JSON.stringify(model)) : null;
+  const tutorial = cfg.kind === 'level' && cfg.level.id === 1 && !st.tutorial3d;
+  const options = tutorial ? { ...cfg.options, rivalDelay: TUTOR_HOLD } : cfg.options;
+  const match = new Match({ seed: cfg.seed, rival: rivalDef, model, twist: cfg.twist, options });
   P = {
     ...cfg,
     rivalDef,
     model,
+    snap,
     match,
     stage: 'vs',
     stepping: false,
     acc: 0,
-    tutorial: cfg.kind === 'level' && cfg.level.id === 1 && !st.tutorialDone,
+    tutorial,
+    tut: 'move', // tutorial step for the first order: 'move' -> 'tap' -> 'gather'
     tips: {},
     shownStars: { player: 0, rival: 0 },
     made: [],
@@ -151,10 +173,13 @@ function begin(cfg) {
     vbubble: null,
     warned: {},
     won: false,
-    pausedAt: 0,
+    goalLost: false,
+    vsAt: clock(),
+    endAt: 0,
   };
   attract.stop();
   app.mode = 'play';
+  app.engine.allowQualityChange = false;
   menus.hideForMatch();
   app.stage.load(match, cfg.theme, equippedSkin(), rivalDef);
 
@@ -165,6 +190,7 @@ function begin(cfg) {
   hud.setup({ rival, player, starsToWin: match.starsToWin, thresholds: cfg.level ? cfg.level.thresholds : null, timeLimit: match.timeLimit, bagSize: match.bagSizeFor('player') });
   const th = cfg.theme;
   hud.setMinimapWorld(match.world, { sea: th.sea.kind === 'clouds' ? '#bcd0f5' : th.sea.color, land: th.ground.top[0], beach: th.ground.beach, block: th.props.bush });
+  hud.setChrome(false);
   hud.show(true);
   app.input.setEnabled(true);
 
@@ -178,7 +204,8 @@ function begin(cfg) {
     const l = cfg.level;
     title = `${l.boss ? 'BOSS · ' : ''}LEVEL ${l.id} · ${l.name.toUpperCase()}`;
     goal = l.goal.text;
-    sub = l.twist ? `Twist · ${l.twist.name}: ${l.twist.desc}` : mem > 0 ? `${mem} of your moves in its notebook` : 'It has never seen you play. Yet.';
+    if (tutorial) sub = `First time? ${rivalDef.name} waits while you learn the controls.`;
+    else sub = l.twist ? `Twist · ${l.twist.name}: ${l.twist.desc}` : mem > 0 ? `${mem} of your moves in its notebook` : 'It has never seen you play. Yet.';
   } else if (cfg.kind === 'daily') {
     title = `DAILY COMMISSION #${cfg.daily.number}`;
     goal = `${cfg.twist.name}: ${cfg.twist.desc}`;
@@ -188,6 +215,7 @@ function begin(cfg) {
     goal = `First to ${match.starsToWin} orders wins.`;
     sub = mem > 0 ? `${mem} of your moves in its notebook` : 'It has never seen you play. Yet.';
   }
+  if (app.blind) sub = 'PRACTICE · blind rival (?blind=1): no rewards';
   hud.vs({ player, rival, title, goal, sub, dur: 1e9 });
   later(VS_MS, endVs, 'match');
   setIntensity(1);
@@ -208,12 +236,16 @@ export function endVs() {
 function introDone() {
   if (!P) return;
   P.stepping = true;
-  if (P.stage === 'intro') P.stage = 'play';
+  if (P.stage === 'intro') {
+    P.stage = 'play';
+    app.hud.setChrome(true);
+  }
 }
 
 // ------------------------------------------------------------------ per frame
+// Nothing moves while paused (the game clock stands still too).
 export function update(dt, now) {
-  if (!P) return;
+  if (!P || app.mode === 'paused') return;
   const m = P.match;
   const input = app.input;
   const cam = app.cam;
@@ -243,29 +275,42 @@ export function update(dt, now) {
   if (cam.mode === 'follow' || cam.mode === 'intro') {
     const f = app.stage.feet('player', _v);
     const sp = Math.hypot(m.player.vx, m.player.vy);
+    cam.viewHeight = app.engine.height;
     cam.follow(f.x, f.z, app.stage.heading('player'), Math.min(1, sp / m.player.speed));
-    cam.lift = hutInTheWay(f.x, f.z) ? 0.55 : 0;
-  }
+    // During the race: lean toward what the player goes for next, look over the hut, and see through
+    // node tops or the order card standing in front of the player.
+    const race = P.stage === 'play' && cam.mode === 'follow';
+    const focus = race ? app.island.focusFor(m, _focus) : null;
+    cam.setFocus(focus ? focus.x : null, focus ? focus.z : null);
+    cam.lift = race ? hutInTheWay(dt, f.x, f.z) : 0;
+    app.island.setViewer(race ? app.engine.camera.position : null, f.x, f.z);
+  } else app.island.setViewer(null);
   if (Math.hypot(m.player.vx, m.player.vy) > 0.05) P.idleSince = clock();
   hudFrame(anchors);
 }
 
-// Would the Workshop hut hide the player from the camera's normal (unlifted) spot? Then look over it.
-const _hut = new THREE.Box3();
-const _ray = new THREE.Ray();
-const _cp = new THREE.Vector3();
-function hutInTheWay(x, z) {
-  const cam = app.cam;
-  const zc = app.island.hubZ;
-  if (!Number.isFinite(zc) || z > zc || z < zc - 7 || Math.abs(x) > 5) return false;
-  const cp = Math.cos(cam.pitch);
-  _cp.set(x - Math.sin(cam.yaw) * cp * cam.distance, 1.4 + Math.sin(cam.pitch) * cam.distance, z - Math.cos(cam.yaw) * cp * cam.distance);
-  // The hut itself (roof included; the benches beside it are low). Its centre sits 0.22 m north of the deck.
-  _hut.min.set(-1.35, 0, zc - 1.22);
-  _hut.max.set(1.35, 2.35, zc + 0.78);
-  _ray.origin.set(x, 0.3, z); // from the feet: lift early enough to keep the whole body in view
-  _ray.direction.copy(_cp).sub(_ray.origin).normalize();
-  return !!_ray.intersectBox(_hut, _cp.set(0, 0, 0));
+// Extra camera pitch to see the player (feet included) over the Workshop hut: the smallest lift that
+// clears the roof, from any side. It engages after 0.2 s in the hut's shadow and lets go after 0.6 s in
+// the clear, so walking along the edge does not make the view bob; the camera eases and rate-limits it.
+const _focus = { x: 0, z: 0 };
+const _hutLift = { match: null, on: false, blocked: 0, clear: 0, lift: 0 };
+function hutInTheWay(dt, x, z) {
+  const h = _hutLift;
+  if (h.match !== P.match) Object.assign(h, { match: P.match, on: false, blocked: 0, clear: 0, lift: 0 });
+  const want = app.island.hutLift(app.cam, x, z);
+  if (want > 0) {
+    h.clear = 0;
+    h.blocked += dt;
+    if (h.on || h.blocked >= 0.2) {
+      h.on = true;
+      h.lift = want;
+    }
+  } else {
+    h.blocked = 0;
+    h.clear += dt;
+    if (h.on && h.clear >= 0.6) h.on = false;
+  }
+  return h.on ? h.lift : 0;
 }
 
 function hudFrame(anchors) {
@@ -311,29 +356,29 @@ function hudFrame(anchors) {
   const c = app.stage.contest;
   if (race && c) {
     const s = screenOf(app.island.nodePos(c.node, _v));
-    if (s.visible) hud.label('contest', labelX(s.x, s.y, 58), s.y - 8, c.rivalFirst ? `${P.rivalDef.name} FIRST` : 'YOU FIRST', 'pill', c.rivalFirst ? '#ff4d5e' : '#3ec22b');
+    if (s.visible) label('contest', labelX(s.x, s.y, 58), s.y - 8, c.rivalFirst ? `${P.rivalDef.name} FIRST` : 'YOU FIRST', 'pill', c.rivalFirst ? '#ff4d5e' : '#3ec22b');
   }
   // Speech bubbles stay clear of the bag and buttons at the bottom.
   const now = clock();
   const low = window.innerHeight - (window.innerHeight < 560 ? 90 : 170);
   if (P.bubble && now < P.bubble.until) {
     const s = screenOf(app.stage.rival.anchor(_v));
-    if (s.visible) hud.label('say-rival', labelX(s.x, s.y, 92), Math.min(s.y, low), P.bubble.text, 'bubble', P.rivalDef.color);
+    if (s.visible) label('say-rival', labelX(s.x, s.y, 92), Math.min(s.y, low), P.bubble.text, 'bubble', P.rivalDef.color);
   }
   if (P.vbubble && now < P.vbubble.until) {
     const s = screenOf(app.stage.villager.anchor(_v));
-    if (s.visible) hud.label('say-villager', labelX(s.x, s.y, 92), Math.min(s.y, low), P.vbubble.text, 'bubble', '#ff8c42');
+    if (s.visible) label('say-villager', labelX(s.x, s.y, 92), Math.min(s.y, low), P.vbubble.text, 'bubble', '#ff8c42');
   }
   // Bag ready: mark the Workshop.
   if (race && ready && !P.tutorial) {
     app.island.displayPos(_v).y += 0.9; // just above the floating order card
     const s = screenOf(_v);
-    if (s.visible) hud.label('workshop', labelX(s.x, s.y, 62), s.y, 'DROP IT HERE', 'pill', '#2f86ff');
+    if (s.visible) label('workshop', labelX(s.x, s.y, 62), s.y, 'DROP IT HERE', 'pill', '#2f86ff');
   }
   if (anchors && anchors.length) {
     for (const a of anchors) {
       const s = screenOf(a.pos);
-      if (s.visible) hud.glassLabel(`g${a.id}`, s.x, s.y, a.p);
+      if (s.visible && !hud.isOverPanel(s.x, s.y)) hud.glassLabel(`g${a.id}`, s.x, s.y, a.p);
     }
   }
   hud.endLabels();
@@ -348,7 +393,7 @@ function hudFrame(anchors) {
     }
     if (left <= 10 && !P.warned[10]) {
       P.warned[10] = true;
-      hud.toast('10 seconds! Hurry!', { kind: 'bad', dur: 2200 });
+      hud.toast('10 seconds! Hurry!', { kind: 'bad', dur: 2200, priority: 'high' });
       sfx.error();
       buzz([30, 40, 30]);
     }
@@ -359,8 +404,58 @@ function hudFrame(anchors) {
       hud.pulse('timer');
     }
   }
-  if (P.tutorial) tutorialFrame(m);
-  else hud.pointer(null);
+  // The tutorial's pointer, or else an arrow at the screen edge toward where to go next.
+  const pointing = P.tutorial ? tutorialFrame(m, need, ready) : false;
+  if (!P.tutorial) hud.pointer(null);
+  hud.edgeArrow(race && !pointing ? offScreenGoal(m, need, ready) : null);
+}
+
+// The nearest node (by walking distance) of a resource the order still needs, ready now.
+function nearestNeeded(m, need) {
+  const field = m.world.nodeField;
+  const here = idx(m.player.x, m.player.y);
+  let best = null;
+  let bd = Infinity;
+  for (const n of m.world.nodes) {
+    if (!need[n.type] || !m.nodeReady(n)) continue;
+    const d = field[n.id][here];
+    if (d >= 0 && d < bd) {
+      bd = d;
+      best = n;
+    }
+  }
+  return best;
+}
+
+// Where the player should head next (the Workshop once the bag is ready, else the node it is going for
+// or the nearest needed one), as an edge arrow target when that spot is off screen; else null.
+function offScreenGoal(m, need, ready) {
+  let color = '#ffc629';
+  if (ready) {
+    app.island.workshopPos('player', _v);
+    color = PLAYER_BLUE;
+  } else {
+    const id = m.playerTarget() ?? nearestNeeded(m, need)?.id;
+    if (id == null) return null;
+    app.island.nodePos(id, _v);
+  }
+  const s = screenOf(_v);
+  const W = app.engine.width;
+  const H = app.engine.height;
+  const cam = app.engine.camera;
+  _c.copy(_v).applyMatrix4(cam.matrixWorldInverse);
+  if (_c.z < 0) {
+    if (s.visible && s.x > 24 && s.x < W - 24 && s.y > 24 && s.y < H - 24) return null;
+  } else {
+    // Behind the camera the projection flips: aim along the direction in view space instead.
+    const k = 1e4 / Math.max(1e-3, Math.hypot(_c.x, _c.y));
+    s.x = W / 2 + _c.x * k;
+    s.y = H / 2 + (Math.abs(_c.x) + Math.abs(_c.y) > 1e-3 ? -_c.y * k : 1e4);
+  }
+  _arrow.x = s.x;
+  _arrow.y = s.y;
+  _arrow.color = color;
+  return _arrow;
 }
 
 function hintText(m) {
@@ -372,7 +467,13 @@ function hintText(m) {
   return `Still need: ${parts.join(', ')}`;
 }
 
-const homeWord = () => (app.input.lastDevice === 'touch' ? 'tap HOME' : 'press Space');
+const touchUI = () => app.input.lastDevice === 'touch';
+const homeWord = () => (touchUI() ? 'tap HOME' : 'press Space');
+
+// Tutorial instructions and the rival's honest reasons outrank every other toast.
+function tip(text, dur = 4600) {
+  app.hud.toast(text, { kind: 'info', dur, priority: 'high' });
+}
 
 // ------------------------------------------------------------------ events -> feedback
 function handleEvents() {
@@ -390,6 +491,7 @@ function quip(kind, ms = 1700) {
 
 // Score floaters: stacked when several land at once.
 function popAt(text, x, y, style, dur) {
+  if (app.hud.isOverPanel(x, y)) return;
   const now = clock();
   if (now - P.popT < 380 && Math.abs(x - P.popX) < 80) P.popK++;
   else P.popK = 0;
@@ -428,13 +530,14 @@ function onEvent(e) {
       hud.caption('GO!', { color: '#ffffff', size: 1.5, dur: 800 });
       if (e.index > 0 && Math.random() < 0.5) quip(m.stars.rival > m.stars.player ? 'winOrder' : 'loseOrder', 1400);
       if (e.index === 0 && P.kind === 'daily') hud.toast(`Daily #${P.daily.number}: ${P.twist.name}. ${P.twist.desc}`, { kind: 'info', dur: 3600 });
-      if (e.index === 0 && P.boosters && P.boosters.length && !P.tutorial) hud.toast(`Boosters on: ${P.boosters.map((id) => eco.BOOSTERS[id].name).join(' + ')}`, { kind: 'good', dur: 2600 });
+      if (e.index === 0 && P.boosters && P.boosters.length && !P.tutorial) hud.toast(`Boosters on: ${P.boosters.map((id) => eco.BOOSTERS[id].name).join(' + ')}`, { kind: 'good', dur: 2600, priority: 'low' });
       if (P.tutorial && e.index === 0) {
-        const touch = app.input.lastDevice === 'touch';
-        hud.toast(touch ? 'Move with the joystick (left thumb). Drag on the right to look around.' : 'Move with WASD or the arrow keys. Drag with the mouse to look around.', { kind: 'info', dur: 5200 });
-        later(5600, () => P && P.match.stats.gathers === 0 && hud.toast('Walk into a resource with a gold ring to gather it. Your bag holds 3.', { kind: 'info', dur: 4600 }), 'match');
+        // The rival sat out this order (it started thinking just now); from the next one it races.
+        m.options.rivalDelay = P.options.rivalDelay || 0;
+        later(900, () => P && P.tut === 'move' && tip(touchUI() ? 'Drag the joystick with your left thumb: walk into a resource with a gold ring.' : 'Walk with WASD or the arrow keys into a resource with a gold ring.', 5200), 'match');
+        later(9000, () => P && P.tut === 'move' && tip(`Follow the hand: walking into a resource gathers it. Your bag holds ${P.match.bagSizeFor('player')}.`), 'match');
       }
-      if (P.tutorial && e.index === 1) hud.toast(`That dotted line is ${R.name}'s route. Its ring shows what it wants next.`, { kind: 'info', dur: 4600 });
+      if (P.tutorial && e.index === 1) tip(`Now ${R.name} races you! Its dotted line shows where it is heading next.`);
       break;
     }
     case 'gather': {
@@ -447,10 +550,10 @@ function onEvent(e) {
         const s = screenOf(pos);
         if (s.visible) hud.fly('res', e.res, s.x, s.y, 'bag', 520);
         P.bagPending.push(clock() + 500);
-        if (P.tutorial && !P.tips.gather) {
-          P.tips.gather = true;
-          hud.toast('Nice! Gather what the card needs, then walk into the Workshop.', { kind: 'good', dur: 3800 });
-        }
+        if (P.tutorial && P.tut === 'move') {
+          P.tut = 'tap';
+          tip(touchUI() ? 'Nice! You can also TAP a gold-ringed resource to run there. Try it!' : 'Nice! You can also CLICK a gold-ringed resource to run there. Try it!');
+        } else if (P.tutorial && P.tut === 'tap') P.tut = 'gather';
       } else sfx.rivalGather();
       break;
     }
@@ -481,7 +584,8 @@ function onEvent(e) {
         }, 'match');
         if (P.tutorial && !P.tips.craft) {
           P.tips.craft = true;
-          later(700, () => P && hud.toast('Parts craft themselves at your bench once their materials arrive.', { kind: 'info', dur: 3200 }), 'match');
+          later(700, () => P && tip('Your bench crafts each part once its materials arrive. Keep gathering what the card needs!', 4200), 'match');
+          later(6000, () => P && P.stage === 'play' && tip(touchUI() ? 'Drag on the right side of the screen to look around.' : 'Drag with the mouse to look around.', 3600), 'match');
         }
       } else fx.burst(bench, R.color, 12, 3, 0.5);
       break;
@@ -500,7 +604,7 @@ function onEvent(e) {
         later(500, () => {
           if (!P) return;
           sfx.complete();
-          hud.caption('CRAFTED!', { sub: `${item.name} delivered · +1 star`, color: '#ffc629', size: 1.15, dur: 1600 });
+          hud.caption('CRAFTED!', { sub: `${item.name} · +1 star`, color: '#ffc629', size: 1.15, dur: 1600 });
           fx.confetti(disp);
           fx.burst(disp, '#ffc83d', 30, 5, 0.9);
         }, 'match');
@@ -520,7 +624,8 @@ function onEvent(e) {
         sfx.rivalComplete();
         app.cam.shake(0.45);
         buzz([60]);
-        hud.caption(`${R.name} GOT IT`, { sub: `${item.name} goes to your rival`, color: R.color, size: 0.95, dur: 1600 });
+        hud.caption('TOO LATE!', { sub: `${R.name} made the ${item.name}`, color: R.color, size: 0.95, dur: 1600 });
+        goalCheck(e);
         fx.burst(disp, R.color, 24, 4.5, 0.8);
         later(700, () => {
           if (!P) return;
@@ -544,17 +649,19 @@ function onEvent(e) {
       app.cam.shake(0.35);
       popWorld('SNATCHED!', pos, 'bad', 1400, -10);
       fx.burst(pos, '#ff4d6d', 16, 4, 0.6);
-      hud.toast(e.text.kind === 'luck' ? `${e.text.text} Pick another one!` : e.text.text, { kind: 'bad', dur: 4400 });
-      const st = app.state;
-      st.tips = st.tips || {};
-      if (!P.tutorial && !st.tips.glass && P.rivalIndex > 0) {
-        st.tips.glass = true;
-        store.save(st);
-        later(4800, () => P && hud.toast("Curious how it reads you? Pause and switch on 'Show the rival's thoughts'.", { kind: 'info', dur: 4500 }), 'match');
+      hud.toast(e.text.kind === 'luck' ? `${e.text.text} Pick another one!` : e.text.text, { kind: 'bad', dur: 4400, priority: 'high' });
+      if (!P.tutorial && !P.tips.glass && !(app.state.tips && app.state.tips.glass) && P.rivalIndex > 0) {
+        P.tips.glass = true;
+        later(4800, () => {
+          // Only mid-race: pausing (where the switch is) is not possible once the match is over.
+          if (!P || P.stage !== 'play' || P.match.phase === 'end') return;
+          commit((st) => ((st.tips = st.tips || {}).glass = true));
+          hud.toast("Curious how it reads you? Pause and switch on 'Show the rival's thoughts'.", { kind: 'info', dur: 4500, priority: 'low' });
+        }, 'match');
       }
       if (P.tutorial && !P.tips.snatch && !P.tips.line) {
         P.tips.snatch = true;
-        later(4700, () => P && hud.toast('Watch its dotted line. When it turns red, it is going for YOUR target. Change course!', { kind: 'info', dur: 4200 }), 'match');
+        later(4700, () => P && tip('Watch its dotted line. When it turns red, it is going for YOUR target. Change course!', 4200), 'match');
       }
       break;
     }
@@ -565,7 +672,7 @@ function onEvent(e) {
       quip('beaten', 1400);
       popWorld(P.level ? `BEAT IT! +${SCORE.outread}` : 'BEAT IT!', pos, 'gold', 1400, -10);
       fx.burst(pos, '#ffc83d', 18, 4, 0.6);
-      hud.toast(`You beat ${R.name} to it. It was heading there too.`, { kind: 'good', dur: 2600 });
+      hud.toast(`You beat ${R.name} to it. It was heading there too.`, { kind: 'good', dur: 2600, priority: 'low' });
       break;
     }
     case 'fooled': {
@@ -579,7 +686,8 @@ function onEvent(e) {
       break;
     }
     case 'bagFull': {
-      hud.toast(e.full ? `Bag full! Head to the Workshop, or ${homeWord()}.` : `Everything gathered! Take it to the Workshop, or ${homeWord()}.`, { dur: 2600 });
+      // The tutorial's first trip home has its own, longer instruction.
+      if (!(P.tutorial && m.stats.trips === 0)) hud.toast(e.full ? `Bag full! Head to the Workshop, or ${homeWord()}.` : `Everything gathered! Take it to the Workshop, or ${homeWord()}.`, { dur: 2600 });
       hud.pulse('home');
       break;
     }
@@ -616,14 +724,20 @@ function onScore(e) {
   }
 }
 
+// The end cinematic. In Adventure the level decides the mood: a won match can still miss the goal.
 function onMatchEnd(e) {
   const m = P.match;
   const R = P.rivalDef;
   P.stage = 'end';
+  P.endAt = clock();
+  const summary = m.summary();
   const win = e.winner === 'player';
-  P.won = P.level ? levelPassed(P.level, m.summary()) : win;
+  P.won = P.level ? levelPassed(P.level, summary) : win;
+  const missed = win && !P.won ? missedGoal(P.level, summary) : null;
   app.input.setEnabled(false);
   m.setMove(0, 0);
+  app.hud.setChrome(false);
+  app.hud.edgeArrow(null);
   // The winner turns to face the island (the hut behind them), and the camera swings round in front.
   app.stage.face(e.winner, app.stage.awayFromHut(e.winner));
   const f = app.stage.feet(e.winner, new THREE.Vector3());
@@ -632,82 +746,111 @@ function onMatchEnd(e) {
     app.cam.follow(f.x, f.z, app.stage.heading(e.winner), 0);
     app.cam.victory(f.x, f.z);
   }, 'match');
-  app.stage.emote('player', win ? 'cheer' : 'sad', 9000);
-  app.stage.emote('rival', win ? 'sad' : 'cheer', 9000);
-  quip(win ? 'loseOrder' : 'winOrder', 2400);
+  app.stage.emote('player', P.won ? 'cheer' : 'sad', 9000);
+  app.stage.emote('rival', P.won ? 'sad' : 'cheer', 9000);
+  quip(P.won ? 'loseOrder' : 'winOrder', 2400);
   app.hud.pointer(null);
   setIntensity(0);
-  if (win) {
+  const s = m.stars;
+  if (P.won) {
     sfx.win();
-    app.hud.caption(e.timeUp ? "TIME'S UP · YOU WIN!" : 'YOU WIN!', { sub: `You out-crafted ${R.name}`, color: '#ffc629', size: 1.2, dur: 2400 });
+    app.hud.caption(e.timeUp ? 'TIME UP!' : 'YOU WIN!', { sub: e.timeUp ? `You win! You out-crafted ${R.name}` : `You out-crafted ${R.name}`, color: '#ffc629', size: 1.1, dur: 2400 });
     const top = app.island.displayPos(new THREE.Vector3());
     for (let i = 0; i < 3; i++) later(250 + i * 380, () => P && app.fx.confetti(new THREE.Vector3(f.x + (i - 1) * 1.2, 2.5, f.z)), 'match');
     later(150, () => P && app.fx.confetti(top), 'match');
+  } else if (missed) {
+    sfx.lose();
+    app.hud.caption(e.timeUp ? 'TIME UP!' : 'GOAL MISSED', { sub: missed, color: '#ff5a6e', size: 1, dur: 2600 });
   } else {
     sfx.lose();
-    app.hud.caption(e.timeUp ? "TIME'S UP" : `${R.name} WINS`, { sub: e.timeUp ? `${R.name} was ahead when the clock ran out` : 'It read you this time', color: R.color, size: 1, dur: 2400 });
+    const sub = !e.timeUp ? 'It read you this time' : s.player === s.rival ? `Tied ${s.player}–${s.rival}: ties go to ${R.name}` : `${R.name} was ahead when time ran out`;
+    app.hud.caption(e.timeUp ? 'TIME UP!' : `${R.name} WINS`, { sub, color: R.color, size: 1, dur: 2400 });
   }
   later(END_MS, finish, 'match');
 }
 
+// Why a won match still fails the level, short enough for the end caption.
+function missedGoal(level, summary) {
+  const g = level.goal;
+  const n = summary.stars.rival;
+  if (g.type === 'win-time') return 'Goal missed: win before time runs out';
+  if (g.type === 'flawless') return `${P.rivalDef.name} took ${n} order${n === 1 ? '' : 's'}: not flawless`;
+  if (g.type === 'craft') return `You had to craft the ${ITEM_BY_ID[g.item].name} yourself`;
+  return 'Goal missed';
+}
+
+// The rival just won an order: say so at once if that makes the level's goal impossible while the
+// match goes on (a flawless goal, or the item the goal asks you to craft).
+function goalCheck(e) {
+  const l = P.level;
+  if (!l || P.goalLost || e.stars.rival >= P.match.starsToWin) return;
+  const g = l.goal;
+  const R = P.rivalDef;
+  let text = null;
+  if (g.type === 'flawless') text = `Goal failed: ${R.name} won an order, and this level needs a flawless win.`;
+  else if (g.type === 'craft' && e.item.id === g.item) text = `Goal failed: ${R.name} made the ${e.item.name}, and you had to craft it yourself.`;
+  if (!text) return;
+  P.goalLost = true;
+  later(1700, () => P && P.stage === 'play' && app.hud.toast(`${text} Pause > Restart to try again.`, { kind: 'bad', dur: 5000, priority: 'high' }), 'match');
+}
+
 // ------------------------------------------------------------------ first-time tutorial (level 1)
-function tutorialFrame(m) {
+// One step at a time while the rival sits out the first order: walk into a resource, tap one, take the
+// bag home with HOME; from the second order the rival races and its route line is explained.
+// Returns true while the tutorial's pointer is showing.
+function tutorialFrame(m, need, ready) {
   const hud = app.hud;
-  if (P.stage !== 'play' || m.phase !== 'race') return hud.pointer(null);
+  if (P.stage !== 'play' || m.phase !== 'race') {
+    hud.pointer(null);
+    return false;
+  }
   const p = m.player;
-  const need = m.needRemaining('player');
-  const total = sum(need);
-  if (m.stats.trips === 0 && p.bag.length && (p.bag.length >= m.bagSizeFor('player') || !total) && p.state !== 'deposit' && !(p.dest && p.dest.kind === 'hub')) {
+  if (m.stats.trips === 0 && ready && p.state !== 'deposit' && !(p.dest && p.dest.kind === 'hub')) {
     if (!P.tips.home) {
       P.tips.home = true;
-      hud.toast(`Bag ready! Walk into the Workshop, or ${homeWord()}.`, { kind: 'info', dur: 4200 });
+      tip(touchUI() ? 'Bag ready! Tap HOME to run to the Workshop (or walk into it).' : 'Bag ready! Press Space (HOME) to run to the Workshop, or walk into it.');
     }
-    return hud.pointer('home', 'HOME');
+    hud.pointer('home', 'HOME');
+    return true;
   }
   const stuck = m.orderIndex === 0 && clock() - P.idleSince > 4000 && p.state === 'idle';
-  if ((m.stats.gathers === 0 || stuck) && total && p.state !== 'gather') {
-    const here = idx(p.x, p.y);
-    const n = m.world.nodes.filter((k) => need[k.type] && m.nodeReady(k)).sort((a, b) => m.world.nodeField[a.id][here] - m.world.nodeField[b.id][here])[0];
+  if (((m.orderIndex === 0 && P.tut !== 'gather') || stuck) && sum(need) && p.state !== 'gather') {
+    const n = nearestNeeded(m, need);
     if (n) {
       tilePos(n.x, n.y, _v).y = 1.1; // point at the resource itself, not the top of a tall tree
       const s = screenOf(_v);
-      return hud.pointer({ x: s.x, y: s.y, label: 'GO HERE', visible: s.visible });
+      hud.pointer({ x: s.x, y: s.y, label: P.tut === 'tap' ? (touchUI() ? 'TAP' : 'CLICK') : 'GO HERE', visible: s.visible });
+      return true;
     }
   }
   // A red line: the rival will beat you to your target.
   const c = app.stage.contest;
   if (c && c.rivalFirst && !P.tips.line) {
     P.tips.line = true;
-    hud.toast(`Red line! ${P.rivalDef.name} will get there first. Pick a different one!`, { kind: 'bad', dur: 4200 });
+    app.hud.toast(`Red line! ${P.rivalDef.name} will get there first. Pick a different one!`, { kind: 'bad', dur: 4200, priority: 'high' });
   }
   hud.pointer(null);
+  return false;
 }
 
 // ------------------------------------------------------------------ controls
 export function tap(x, y) {
   if (!P || app.mode !== 'play') return;
-  if (P.stage === 'vs') return endVs();
+  if (P.stage === 'vs') {
+    if (clock() - P.vsAt >= GUARD_MS) endVs();
+    return;
+  }
   if (P.stage === 'intro') {
     app.cam.skipIntro();
     return;
   }
   const m = P.match;
   if (P.stage !== 'play' || m.phase !== 'race') return;
-  const hits = app.engine.raycast(x, y, app.island.pickTargets);
-  if (!hits.length) return;
-  const h = hits[0];
-  const u = h.object.userData || {};
-  let dest = null;
-  if (u.kind === 'node') {
-    const n = m.world.nodes[u.id];
-    dest = m.command(n.x, n.y);
-  } else if (u.kind === 'hub') dest = m.command(4, m.world.hubY);
-  else {
-    const t = worldToTile(h.point.x, h.point.z);
-    dest = m.command(Math.round(t.x), Math.round(t.y));
-  }
+  if (app.hud.isOverPanel(x, y)) return; // a tap on a HUD panel never walks to what is behind it
+  const dest = tapTarget(m, x, y);
   if (!dest) return;
   sfx.tap();
+  if (P.tutorial && P.tut === 'tap' && dest.kind === 'node') P.tut = 'gather';
   const pos = new THREE.Vector3();
   if (dest.kind === 'node') {
     const n = m.world.nodes[dest.id];
@@ -718,13 +861,47 @@ export function tap(x, y) {
   app.fx.ring(pos, '#ffffff', 0.55);
 }
 
+// What the finger visibly touches: a node top, or the tile under the first visible surface (a node's
+// or a Workshop tile means that node / the Workshop; the floating order card means the Workshop too).
+// The fitted invisible proxies only catch near misses in front of that surface (e.g. the edge of a node
+// seen against the sea or a bush).
+function tapTarget(m, x, y) {
+  const isl = app.island;
+  const eng = app.engine;
+  const vis = eng.raycast(x, y, isl.pickVisible, false)[0];
+  if (isl.display && isl.display.visible && isl.cardFade > 0.5) {
+    const c = eng.raycast(x, y, [isl.card], false)[0];
+    if (c && (!vis || c.distance < vis.distance)) return m.command(4, m.world.hubY);
+  }
+  if (vis) {
+    const id = isl.nodeOfHit(vis);
+    if (id >= 0) return m.command(m.world.nodes[id].x, m.world.nodes[id].y);
+    const t = worldToTile(vis.point.x, vis.point.z);
+    const dest = m.command(Math.round(t.x), Math.round(t.y));
+    if (dest) return dest;
+  }
+  const hits = eng.raycast(x, y, isl.pickTargets, false);
+  for (let i = 0; i < hits.length; i++) {
+    const h = hits[i];
+    const u = h.object.userData;
+    if (vis && h.distance > vis.distance + 0.3) break;
+    if (u.kind === 'node') return m.command(m.world.nodes[u.id].x, m.world.nodes[u.id].y);
+    if (u.kind === 'hub') return m.command(4, m.world.hubY);
+    if (!vis) {
+      const t = worldToTile(h.point.x, h.point.z);
+      return m.command(Math.round(t.x), Math.round(t.y));
+    }
+  }
+  return null;
+}
+
 export function interact() {
   if (!P || app.mode !== 'play' || P.stage !== 'play') return;
   const r = P.match.interact();
   if (r) sfx.tap();
   else if (P.match.phase === 'race' && P.match.canInteract() === null && !P.tips.interact) {
     P.tips.interact = true;
-    app.hud.toast('Walk up to a resource (or the Workshop) first. Needed ones gather by themselves.', { dur: 2800 });
+    app.hud.toast('Walk up to a resource (or the Workshop) first. Needed ones gather by themselves.', { dur: 2800, priority: 'low' });
   }
 }
 
@@ -741,10 +918,14 @@ export function home() {
 }
 
 // ------------------------------------------------------------------ pause / resume / quit / restart
+// Pausing stops the game clock: the sim, the scheduled feedback, emotes and bubbles all wait. The end
+// cinematic cannot be paused, unless the results never came (then Quit must stay reachable).
 export function pause() {
-  if (!P || app.mode !== 'play' || P.stage === 'vs' || P.stage === 'end') return false;
+  if (!P || app.mode !== 'play' || P.stage === 'vs') return false;
+  if (P.stage === 'end' && clock() - P.endAt < END_MS + 2000) return false;
   app.mode = 'paused';
-  P.pausedAt = clock();
+  stopClock('pause');
+  app.redraw = true;
   app.input.setEnabled(false);
   P.match.setMove(0, 0);
   suspendAudio(true);
@@ -755,8 +936,8 @@ export function pause() {
 export function resume() {
   if (!P || app.mode !== 'paused') return;
   app.mode = 'play';
-  shiftLater('match', clock() - P.pausedAt);
-  app.input.setEnabled(true);
+  stopClock('pause', false);
+  if (P.stage !== 'end') app.input.setEnabled(true);
   suspendAudio(false);
   menus.closePause();
 }
@@ -767,51 +948,70 @@ function decided() {
   return m.phase === 'end' || Math.max(m.stars.player, m.stars.rival) >= m.starsToWin;
 }
 
-function fastForward() {
+// Quit or restart once the winner is known: the match is played out and recorded instead.
+function finishDecided() {
+  menus.closePause();
   const m = P.match;
   let guard = 0;
   while (m.phase !== 'end' && guard++ < 4000) m.step(STEP);
   m.drainEvents();
+  app.mode = 'play';
+  finish();
 }
 
-// Abandon: the model still closes the match (what it saw counts); a level costs a heart.
+// What leaving a match early costs, asked before a quit or a restart (null: nothing to confirm).
+function leaveCost(what) {
+  if (P.kind === 'level') return `The heart this try used is not given back${what === 'restart' ? ', and the new try uses another one. Boosters used this time are gone' : ''}.`;
+  if (P.kind === 'daily' && P.daily.ranked) return `This is your ranked attempt: it is recorded as a loss${what === 'restart' ? ' and the new run is practice' : ''}.`;
+  return null;
+}
+
+// Abandon (quit / restart): nothing is recorded. The level's heart stays spent, a ranked Daily keeps its
+// loss. The notebook keeps what it saw; if it saw nothing, it goes back to how it was before the match.
 function abandon() {
-  const st = app.state;
   const m = P.match;
-  if (m.phase !== 'end') P.model.endMatch();
-  if (P.model === app.model) st.model = app.model.toJSON();
-  if (P.kind === 'level') eco.loseHeart(st, Date.now());
-  store.save(st);
+  const shared = P.model === app.model;
+  if (shared) {
+    if (m.stats.gathers || m.stats.snatched) {
+      if (m.phase !== 'end') app.model.endMatch();
+    } else app.model = new PlayerModel(P.snap);
+  }
+  const model = shared ? app.model.toJSON() : null;
+  const level = P.kind === 'level';
+  commit((st) => {
+    if (model) st.model = model;
+    if (level) eco.abandonLevel(st);
+  });
 }
 
 export async function quit() {
   if (!P) return;
-  if (decided()) {
-    menus.closePause();
-    fastForward();
-    app.mode = 'play';
-    return finish();
+  if (decided()) return finishDecided();
+  const cfg = P;
+  const cost = leaveCost('quit');
+  if (cost) {
+    const ok = await menus.confirm({ title: cfg.kind === 'level' ? 'Quit this level?' : 'Quit the Daily?', text: cost, ok: 'QUIT', danger: true });
+    if (!ok || P !== cfg) return;
   }
-  if (P.kind === 'level') {
-    const ok = await menus.confirm({ title: 'Quit this level?', text: 'Quitting counts as a loss: you will lose one heart.', ok: 'QUIT', danger: true });
-    if (!ok || !P) return;
-  }
-  const kind = P.kind;
   abandon();
   leave();
-  if (kind === 'level') menus.showMap();
+  if (cfg.kind === 'level') menus.showMap();
   else menus.showTitle();
 }
 
 export async function restart() {
   if (!P) return;
+  if (decided()) return finishDecided();
   const cfg = P;
+  const cost = leaveCost('restart');
+  if (cost) {
+    const ok = await menus.confirm({ title: cfg.kind === 'level' ? 'Restart this level?' : 'Restart the Daily?', text: cost, ok: 'RESTART', danger: true });
+    if (!ok || P !== cfg) return;
+  }
   if (cfg.kind === 'level') {
-    const ok = await menus.confirm({ title: 'Restart this level?', text: 'Restarting counts as a loss: you will lose one heart. Boosters used this time are gone.', ok: 'RESTART', danger: true });
-    if (!ok || !P) return;
     abandon();
     if (!eco.canStartLevel(app.state, Date.now())) {
-      // That was the last heart: back to the map, where the level popup shows the countdown.
+      // No heart left for another try: back to the map, where the level popup shows the countdown.
       leave();
       menus.showMap(cfg.level.id);
       return;
@@ -827,34 +1027,63 @@ export async function restart() {
 }
 
 // ------------------------------------------------------------------ finishing
+// Record the match and show the results. If anything throws on the way, the player goes back to the
+// menus rather than being stuck on the end cinematic.
 function finish() {
   if (!P || app.mode === 'over') return;
   cancelLater('match');
-  const m = P.match;
-  const st = app.state;
-  const now = Date.now();
-  const summary = m.summary();
-  summary.blind = app.blind;
-  if (P.model === app.model) st.model = app.model.toJSON();
-  if (P.kind !== 'daily') st.tutorialDone = true;
-  const result = { kind: P.kind, summary, level: P.level, daily: P.daily, rival: P.rivalDef, rivalIndex: P.rivalIndex, model: P.model };
-  if (P.kind === 'level') {
-    const prev = eco.levelRecord(st, P.level.id);
-    result.prev = { stars: prev.stars, best: prev.best };
-    result.rec = store.recordMatch(st, summary, { now });
-    result.grant = eco.grantLevelResult(st, P.level, summary, now);
-    if (!result.grant.passed) eco.loseHeart(st, now);
-  } else {
-    result.rec = store.recordMatch(st, summary, { rivalIndex: P.daily ? null : P.rivalIndex, daily: P.daily && P.daily.ranked ? P.daily : null, now });
-    result.coins = eco.recordQuickRace(st, summary, { now, daily: !!P.daily });
+  const kind = P.kind;
+  try {
+    const result = record();
+    app.mode = 'over';
+    stopClock('pause', false);
+    app.engine.allowQualityChange = true;
+    P.stage = 'end';
+    app.input.setEnabled(false);
+    app.hud.show(false);
+    suspendAudio(false);
+    menus.showMatchResult(result);
+  } catch (err) {
+    console.error(err);
+    try {
+      reloadSave(); // drop whatever half of the result made it into memory
+      if (kind === 'level') commit((st) => eco.abandonLevel(st));
+    } catch (e) {
+      console.error(e);
+    }
+    leave();
+    if (kind === 'level') menus.showMap();
+    else menus.showTitle();
+    menus.toast('Something went wrong while saving this match. Sorry!', { kind: 'bad', dur: 4000 });
   }
-  store.save(st);
-  app.mode = 'over';
-  P.stage = 'end';
-  app.input.setEnabled(false);
-  app.hud.show(false);
-  suspendAudio(false);
-  menus.showMatchResult(result);
+}
+
+// Fold the finished match into the save (reloaded first if another tab wrote it meanwhile). ?blind=1 is
+// practice: the result is shown, nothing is paid or unlocked.
+function record() {
+  if (app.saveChanged) reloadSave();
+  const cfg = P;
+  const now = Date.now();
+  const summary = cfg.match.summary();
+  summary.blind = app.blind;
+  const model = cfg.model === app.model ? app.model.toJSON() : null;
+  const ranked = !!(cfg.daily && cfg.daily.ranked);
+  const result = { kind: cfg.kind, summary, level: cfg.level, daily: cfg.daily, rival: cfg.rivalDef, rivalIndex: cfg.rivalIndex, model: cfg.model, practice: app.blind };
+  return commit((st) => {
+    if (model) st.model = model;
+    if (cfg.tutorial) st.tutorial3d = true;
+    if (cfg.kind === 'level') {
+      const prev = eco.levelRecord(st, cfg.level.id);
+      result.prev = { stars: prev.stars, best: prev.best };
+      result.rec = store.recordMatch(st, summary, { now });
+      result.grant = eco.grantLevelResult(st, cfg.level, summary, now, { practice: app.blind });
+      eco.finishLevelHeart(st, result.grant.passed, now);
+    } else {
+      result.rec = store.recordMatch(st, summary, { rivalIndex: cfg.daily ? null : cfg.rivalIndex, daily: ranked ? cfg.daily : null, now });
+      result.coins = eco.recordQuickRace(st, summary, { now, daily: ranked, practice: app.blind });
+    }
+    return result;
+  });
 }
 
 // Back to the menus: forget the match; the title's attract match takes over the 3D stage.
@@ -868,6 +1097,8 @@ export function leave() {
 function teardown() {
   cancelLater('match');
   P = null;
+  stopClock('pause', false);
+  app.engine.allowQualityChange = true;
   app.cam.lift = 0;
   app.hud.reset();
   app.hud.show(false);

@@ -3,9 +3,14 @@
 //
 // Everything timed in the game (delayed feedback, the VS splash, the results after a match) goes through
 // later() on the game clock rather than setTimeout, so the test hook advance(ms) can fast-forward it.
+// The clock stands still while a match is paused, while the tab is hidden and while the 3D view is lost.
+//
+// The save is written through commit(): another tab (or the classic game) may have saved in between.
 
 import { portraitURL } from '../3d/characters.js';
 import { SKIN_BY_ID, DEFAULT_SKIN } from '../skins.js';
+import { PlayerModel } from '../model.js';
+import * as store from '../storage.js';
 
 export const REPO_URL = 'https://github.com/bmanoj07112004-eng/OUTCRAFT';
 export const ABOUT = { author: 'B Manoj', completed: '23 Sep 2026 · first public build' };
@@ -27,12 +32,19 @@ export const app = {
   blind: params.get('blind') === '1', // ablation: the rival's reads switched off
   params,
   stick: null, // test hook override for the joystick { x, y }
+  redraw: false, // render one frame even though the 3D view is still (a pause, a resize)
+  saveChanged: false, // another tab wrote the save during this match: finish() reloads it first
+  onSaveReloaded: null, // (live) => void: the save was reloaded from storage (menus re-render)
+  onSaveFailed: null, // (reason) => void: a write failed ('blocked' | 'quota')
 };
 
 // ------------------------------------------------------------------ game clock
 let offset = 0;
 let frozen = null; // test hook: a stopped clock only moves with skipClock()
-export const clock = () => (frozen !== null ? frozen : performance.now() + offset);
+let stoppedAt = null; // game time at which stopClock() stopped it
+const stops = new Set();
+const running = () => (frozen !== null ? frozen : performance.now() + offset);
+export const clock = () => (stoppedAt !== null ? stoppedAt : running());
 export function skipClock(ms) {
   if (frozen !== null) frozen += ms;
   else offset += ms;
@@ -42,6 +54,18 @@ export function freezeClock(on) {
   else if (!on && frozen !== null) {
     offset = frozen - performance.now();
     frozen = null;
+  }
+}
+
+// Stop the game clock for a reason ('pause', 'hidden', 'gl'); it runs again, from where it stopped,
+// once every reason is gone.
+export function stopClock(reason, on = true) {
+  if (on) {
+    if (!stops.size) stoppedAt = running();
+    stops.add(reason);
+  } else if (stops.delete(reason) && !stops.size) {
+    skipClock(stoppedAt - running());
+    stoppedAt = null;
   }
 }
 
@@ -55,11 +79,6 @@ export function later(ms, fn, tag = '') {
 
 export function cancelLater(tag) {
   for (let i = jobs.length - 1; i >= 0; i--) if (!tag || jobs[i].tag === tag) jobs.splice(i, 1);
-}
-
-// Push a group of jobs back (e.g. by the time the game spent paused).
-export function shiftLater(tag, ms) {
-  for (const j of jobs) if (j.tag === tag) j.at += ms;
 }
 
 export function runDue(now) {
@@ -80,6 +99,40 @@ export function runDue(now) {
       console.error(err);
     }
   }
+}
+
+// ------------------------------------------------------------------ the save file
+// change(state) edits the save and returns a result. When another tab saved a newer version meanwhile
+// (store.save refuses a stale write), that version is loaded and the change is applied again on top of it.
+export function commit(change) {
+  let r = change(app.state);
+  if (store.save(app.state)) return r;
+  if (store.saveStatus().reason === 'stale') {
+    reloadSave();
+    r = change(app.state);
+    if (store.save(app.state)) return r;
+  }
+  const why = store.saveStatus().reason;
+  if (why !== 'stale' && app.onSaveFailed) app.onSaveFailed(why);
+  return r;
+}
+
+// Load the stored save (written by another tab). During a match the rivals' notebook in play is kept:
+// it is saved with the result.
+export function reloadSave() {
+  const live = app.mode === 'play' || app.mode === 'paused';
+  app.state = store.load();
+  if (app.params.get('glass') === '1') app.state.settings.glass = true;
+  if (!live) {
+    try {
+      app.model = new PlayerModel(app.state.model);
+    } catch (err) {
+      console.error(err);
+      app.model = new PlayerModel();
+    }
+  }
+  app.saveChanged = false;
+  if (app.onSaveReloaded) app.onSaveReloaded(live);
 }
 
 // ------------------------------------------------------------------ small shared helpers

@@ -1,10 +1,19 @@
 // The one WebGL engine every 3D module shares: renderer, scene and camera, the gradient sky dome, fog,
 // hemisphere + sun lights (the sun's shadow camera is fitted to the island), quality levels with an
-// automatic fps fallback, resize, and helpers to project 3D points to CSS pixels and to raycast taps.
+// automatic fps fallback (it only switches at a break and remembers where it settled), WebGL context
+// loss / restore, shader warm-up, resize, and helpers to project 3D points to CSS pixels and to raycast.
 
 import * as THREE from 'three';
 
 const LEVELS = ['low', 'medium', 'high'];
+// Auto quality: a frame rate under SLOW_FPS that is also well under the best rate this device has shown
+// (so a 30 fps display cap is not "slow"), or under FLOOR_FPS whatever the best, for SLOW_SECS steps down.
+const SLOW_FPS = 40;
+const SLOW_REL = 0.75;
+const FLOOR_FPS = 26;
+const SLOW_SECS = 3;
+const SETTLE_SECS = 20; // measured seconds at a level without a step down = settled
+const WARM_MAX_MS = 2500; // longest a background shader compile may hold back rendering
 // Default shadow box: the 9x13 tile island (18 x 26 m) plus its beach, from the sea up to the treetops.
 const ISLAND_BOX = new THREE.Box3(new THREE.Vector3(-11, -1, -15), new THREE.Vector3(11, 4.5, 15));
 
@@ -42,18 +51,32 @@ function deviceDefault() {
 }
 
 export class Engine {
-  constructor(canvas, { quality = 'auto' } = {}) {
+  // quality: 'low' | 'medium' | 'high' | 'auto'; autoLevel: the level auto quality settled on last time
+  // (saved by the game from onAutoLevel), so auto starts there instead of re-learning it.
+  constructor(canvas, { quality = 'auto', autoLevel = null } = {}) {
     this.canvas = canvas;
     this.quality = LEVELS.includes(quality) ? quality : 'auto';
-    this.level = this.quality === 'auto' ? deviceDefault() : this.quality;
+    this.autoLevel = LEVELS.includes(autoLevel) ? autoLevel : null;
+    this.level = this.quality === 'auto' ? this.autoLevel || deviceDefault() : this.quality;
     this.width = 1;
     this.height = 1;
     this.fps = 60;
+    this.theme = null;
+    this.contextLost = false;
+
+    // Set by the game. Auto quality only switches levels while allowQualityChange is true (the game turns
+    // it off during a race: a switch recompiles every shader, a visible freeze); a step decided meanwhile
+    // waits for the next break. onAutoLevel(level) fires when auto quality settles on a level.
+    this.allowQualityChange = true;
+    this.onAutoLevel = null;
+    this.onContextLost = null;
+    this.onContextRestored = null;
 
     // Antialiasing is a context attribute, so it is decided once here from the starting level.
+    this.antialias = this.level !== 'low';
     this.renderer = new THREE.WebGLRenderer({
       canvas,
-      antialias: this.level !== 'low',
+      antialias: this.antialias,
       powerPreference: 'high-performance',
       stencil: false,
     });
@@ -106,6 +129,13 @@ export class Engine {
     this._last = 0;
     this._slow = 0;
     this._grace = 2;
+    this._pending = null; // auto level waiting for a break
+    this._best = 0; // best sustained frame rate seen this session (rAF rate, rendering or not)
+    this._rateDt = 0.1;
+    this._fpsDt = 1 / 60;
+    this._measured = 0; // seconds measured at the current level without stepping down
+    this._settled = null; // last level reported through onAutoLevel
+    this._warmUntil = 0; // rendering is held back until a background shader compile finishes
     this._corners = Array.from({ length: 8 }, () => new THREE.Vector3());
 
     this.applyLevel();
@@ -114,13 +144,68 @@ export class Engine {
     this._onResize = () => this.resize();
     window.addEventListener('resize', this._onResize);
     window.addEventListener('orientationchange', this._onResize);
+    // three.js also listens (and rebuilds its own GL state on restore); these tell the game and re-apply
+    // the engine's settings.
+    this._onLost = (e) => {
+      e.preventDefault(); // allows the browser to restore the context
+      if (this.contextLost) return;
+      this.contextLost = true;
+      if (this.onContextLost) this.onContextLost();
+    };
+    this._onRestored = () => {
+      this.contextLost = false;
+      this._last = 0;
+      this._grace = 2;
+      if (this.theme) this.setTheme(this.theme);
+      this.applyLevel();
+      if (this.onContextRestored) this.onContextRestored();
+    };
+    canvas.addEventListener('webglcontextlost', this._onLost);
+    canvas.addEventListener('webglcontextrestored', this._onRestored);
+    // The display's own frame rate, measured on every animation frame (menus that skip rendering show
+    // what the screen can do), so auto quality can tell a capped display from a slow GPU.
+    this._probeT = 0;
+    this._probe = (t) => {
+      const dt = this._probeT ? (t - this._probeT) / 1000 : 0;
+      this._probeT = t;
+      if (dt > 0 && dt < 0.25) {
+        this._rateDt += (dt - this._rateDt) * (1 - Math.exp(-dt / 0.6));
+        if (1 / this._rateDt > this._best) this._best = 1 / this._rateDt;
+      }
+      this._probeId = requestAnimationFrame(this._probe);
+    };
+    this._probeId = requestAnimationFrame(this._probe);
   }
 
-  // 'low' | 'medium' | 'high' | 'auto'. Auto starts at the device default and may step down later.
+  // 'low' | 'medium' | 'high' | 'auto'. Auto starts where it settled before (or the device default) and
+  // may step down later, between matches.
   setQuality(q) {
     this.quality = LEVELS.includes(q) ? q : 'auto';
-    this.level = this.quality === 'auto' ? deviceDefault() : this.quality;
+    this.level = this.quality === 'auto' ? this.autoLevel || deviceDefault() : this.quality;
+    this._pending = null;
+    this._settled = null;
     this.applyLevel();
+  }
+
+  // True when the current level wants a different antialiasing than the context was created with (a
+  // context attribute): the level then applies fully after a restart.
+  get needsRestart() {
+    return this.antialias !== (this.level !== 'low');
+  }
+
+  // Compiles the shaders of everything in the scene now (in the background where the browser supports
+  // parallel compiling), so the first frames of a match do not stall. Resolves when done.
+  warmup() {
+    const r = this.renderer;
+    if (this.contextLost) return Promise.resolve();
+    this.camera.updateMatrixWorld();
+    try {
+      if (r.extensions.has('KHR_parallel_shader_compile')) return r.compileAsync(this.scene, this.camera).then(() => {}, () => {});
+      r.compile(this.scene, this.camera);
+    } catch (err) {
+      console.warn(err);
+    }
+    return Promise.resolve();
   }
 
   applyLevel() {
@@ -140,20 +225,30 @@ export class Engine {
         this.sun.shadow.map = null;
       }
     }
-    // Shadow settings are baked into shader programs: make every material recompile once.
+    // Shadow settings are baked into shader programs: make every material recompile once. Where the
+    // browser compiles in the background, rendering waits for it (the last frame stays on screen) instead
+    // of stalling the page on the first draw.
     if (changed) {
       this.scene.traverse((o) => {
         if (!o.material) return;
         for (const m of Array.isArray(o.material) ? o.material : [o.material]) m.needsUpdate = true;
       });
+      if (this._rendered && !this.contextLost && r.extensions.has('KHR_parallel_shader_compile')) {
+        const until = (this._warmUntil = performance.now() + WARM_MAX_MS);
+        this.warmup().then(() => {
+          if (this._warmUntil === until) this._warmUntil = 0;
+        });
+      }
     }
     this._grace = 2;
     this._slow = 0;
+    this._measured = 0;
     this.resize();
   }
 
   // Colours of THEMES[i]: sky gradient, fog, hemisphere and sun.
   setTheme(theme) {
+    this.theme = theme;
     const u = this.skyUniforms;
     u.uTop.value.set(theme.sky.top);
     u.uBottom.value.set(theme.sky.bottom);
@@ -224,28 +319,59 @@ export class Engine {
     const now = performance.now();
     const dt = this._last ? (now - this._last) / 1000 : 0;
     this._last = now;
-    // Ignore hitches from hidden tabs; smooth over roughly half a second.
+    // Ignore hitches from hidden tabs; smooth the frame time over roughly half a second.
     if (dt > 0 && dt < 0.5) {
-      this.fps += (1 / dt - this.fps) * (1 - Math.exp(-dt / 0.5));
+      this._fpsDt += (dt - this._fpsDt) * (1 - Math.exp(-dt / 0.5));
+      this.fps = 1 / this._fpsDt;
       this.autoTick(dt);
     }
+    if (this._pending && this.allowQualityChange) this._applyAuto(this._pending);
+    if (this.contextLost) return;
+    if (this._warmUntil) {
+      if (now < this._warmUntil) return;
+      this._warmUntil = 0;
+    }
+    this._rendered = true;
     this.sky.position.copy(this.camera.position);
     this.renderer.info.reset();
     this.renderer.render(this.scene, this.camera);
   }
 
-  // Auto quality: drop one level when the frame rate stays under 40 fps for 3 seconds.
+  // Auto quality: step down when the frame rate stays low for SLOW_SECS (straight to 'low' when it is
+  // very low). The step waits for a break when allowQualityChange is off. A level that ran SETTLE_SECS
+  // without being too slow counts as settled.
   autoTick(dt) {
-    if (this.quality !== 'auto' || this.level === 'low') return;
+    if (this.quality !== 'auto' || this._pending) return;
     if (this._grace > 0) {
       this._grace -= dt;
       return;
     }
-    this._slow = this.fps < 40 ? this._slow + dt : 0;
-    if (this._slow > 3) {
-      this.level = LEVELS[LEVELS.indexOf(this.level) - 1];
-      this.applyLevel();
+    const slow = this.fps < SLOW_FPS && (this.fps < SLOW_REL * this._best || this.fps < FLOOR_FPS);
+    this._slow = slow && this.level !== 'low' ? this._slow + dt : 0;
+    if (this._slow > SLOW_SECS) {
+      const i = LEVELS.indexOf(this.level);
+      const next = LEVELS[Math.max(0, i - (this.fps < SLOW_FPS * 0.5 ? 2 : 1))];
+      this._slow = 0;
+      if (this.allowQualityChange) this._applyAuto(next);
+      else this._pending = next;
+      return;
     }
+    this._measured += dt;
+    if (this._measured > SETTLE_SECS && this._settled !== this.level) this._settle();
+  }
+
+  _applyAuto(level) {
+    this._pending = null;
+    if (this.quality !== 'auto' || level === this.level) return;
+    this.level = level;
+    this.applyLevel();
+    this._settle();
+  }
+
+  _settle() {
+    this._settled = this.level;
+    this.autoLevel = this.level;
+    if (this.onAutoLevel) this.onAutoLevel(this.level);
   }
 
   // CSS-pixel position of a world point, for HTML labels. `visible` is false behind the camera or off screen.
@@ -270,6 +396,9 @@ export class Engine {
   dispose() {
     window.removeEventListener('resize', this._onResize);
     window.removeEventListener('orientationchange', this._onResize);
+    this.canvas.removeEventListener('webglcontextlost', this._onLost);
+    this.canvas.removeEventListener('webglcontextrestored', this._onRestored);
+    cancelAnimationFrame(this._probeId);
     this.sky.geometry.dispose();
     this.sky.material.dispose();
     if (this.sun.shadow.map) this.sun.shadow.map.dispose();

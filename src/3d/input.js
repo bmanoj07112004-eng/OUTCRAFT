@@ -14,12 +14,15 @@ const STICK_R = 56; // px the knob can travel from the base centre (the base fol
 const BASE = 132; // base diameter (px)
 const KNOB = 58; // knob diameter (px)
 const DEAD = 0.14; // dead zone, fraction of STICK_R
+const REACH_MIN = 10; // px: near a screen edge the knob's reach toward it shrinks to the room left, not below this
 const TAP_MS = 300; // a touch tap is released within this time...
 const TAP_MS_MOUSE = 700;
 const SLOP_TOUCH = 12; // ...having moved less than this (px)
 const SLOP_MOUSE = 5;
 const PINCH_WINDOW = 160; // a second finger this soon after a still first one makes a pinch (ms)
-const LOOK_PER_PX = 0.0055; // radians of orbit per px of drag at sensitivity 1
+const LOOK_PER_PX = 0.0055; // mouse: radians of orbit per px of drag at sensitivity 1
+const TOUCH_TURN = 0.65; // touch: a drag over this fraction of the screen's short side turns the view 180 degrees...
+const TOUCH_TILT = 0.55; // ...and tilts at this fraction of that rate
 const WHEEL_ZOOM = 0.0012; // log zoom per wheel pixel
 const KEY_RATE = 14; // keyboard stick easing (1/s)
 
@@ -52,7 +55,7 @@ export class Input {
     this._ptrs = new Map(); // pointerId -> tracked pointer
     this._stickPtr = null;
     this._pinch = null; // { a, b, d, mx, my }
-    this._joy = { x: 0, y: 0, mag: 0, bx: 0, by: 0 };
+    this._joy = { x: 0, y: 0, mag: 0, bx: 0, by: 0, left: 0, right: 0, top: 0, bottom: 0 };
     this._keys = new Set();
     this._kx = 0; // keyboard target
     this._ky = 0;
@@ -66,6 +69,7 @@ export class Input {
     this._lookOut = { dx: 0, dy: 0 };
     this._fadeTimer = 0;
     this._scale = 0.85; // joystick base scale (1 while in use)
+    this._touchLook = LOOK_PER_PX;
 
     this._buildJoystick();
     canvas.style.touchAction = 'none';
@@ -79,7 +83,10 @@ export class Input {
     this._onKeyUp = this._onKeyUp.bind(this);
     this._onBlur = () => this._clear();
     this._onVisibility = () => document.hidden && this._clear();
-    this._onResize = () => this._placeGhost();
+    this._onResize = () => {
+      this._measure();
+      this._placeGhost();
+    };
 
     canvas.addEventListener('pointerdown', this._onDown);
     canvas.addEventListener('wheel', this._onWheel, { passive: false });
@@ -94,7 +101,14 @@ export class Input {
     window.addEventListener('blur', this._onBlur);
     window.addEventListener('resize', this._onResize);
     document.addEventListener('visibilitychange', this._onVisibility);
+    this._measure();
     this._placeGhost();
+  }
+
+  // Touch look speed follows the screen: the same share of the screen turns the view as far on any phone.
+  _measure() {
+    const short = Math.max(200, Math.min(window.innerWidth || 0, window.innerHeight || 0) || 390);
+    this._touchLook = Math.PI / (TOUCH_TURN * short);
   }
 
   // Current move intent: x right, y forward, mag 0..1 (joystick while a thumb is on it, else keyboard).
@@ -259,7 +273,7 @@ export class Input {
     if (p.role === 'stick') this._moveStick(p);
     else if (p.role === 'pinch') this._movePinch();
     else if ((p.role === 'look' || p.role === 'mouse') && !p.tapOK) {
-      this._addLook(p.x - p.lx, p.y - p.ly);
+      this._addLook(p.x - p.lx, p.y - p.ly, !p.mouse);
       p.lx = p.x;
       p.ly = p.y;
     }
@@ -294,10 +308,10 @@ export class Input {
     this._zoom += Math.max(-120, Math.min(120, px)) * WHEEL_ZOOM * (e.ctrlKey ? 6 : 1);
   }
 
-  _addLook(dxPx, dyPx) {
-    const k = LOOK_PER_PX * this.sensitivity;
+  _addLook(dxPx, dyPx, touch = false) {
+    const k = (touch ? this._touchLook : LOOK_PER_PX) * this.sensitivity;
     this._lookX -= dxPx * k;
-    this._lookY += dyPx * k * (this.invertY ? -1 : 1);
+    this._lookY += dyPx * k * (touch ? TOUCH_TILT : 1) * (this.invertY ? -1 : 1);
   }
 
   // ------------------------------------------------------------------ joystick
@@ -305,6 +319,11 @@ export class Input {
   _startStick(p) {
     this._stickPtr = p;
     const j = this._joy;
+    const r = this.canvas.getBoundingClientRect();
+    j.left = r.left;
+    j.right = r.right;
+    j.top = r.top;
+    j.bottom = r.bottom;
     j.bx = p.x;
     j.by = p.y;
     j.x = j.y = j.mag = 0;
@@ -321,21 +340,35 @@ export class Input {
     let dx = p.x - j.bx;
     let dy = p.y - j.by;
     let len = Math.hypot(dx, dy);
-    if (len > STICK_R) {
+    const reach = len > 0 ? this._reach(dx / len, dy / len) : STICK_R;
+    if (len > reach) {
       // The base trails the thumb, so reversing direction is instant and the stick never "runs out".
-      const k = (len - STICK_R) / len;
+      const k = (len - reach) / len;
       j.bx += dx * k;
       j.by += dy * k;
       dx = p.x - j.bx;
       dy = p.y - j.by;
-      len = STICK_R;
+      len = reach;
     }
-    const n = len / STICK_R;
+    const n = len / reach;
     const mag = n <= DEAD ? 0 : Math.min(1, (n - DEAD) / (1 - DEAD));
     j.mag = mag;
     j.x = len > 0 ? (dx / len) * mag : 0;
     j.y = len > 0 ? (-dy / len) * mag : 0;
-    this._drawStick(dx, dy);
+    this._drawStick(dx * (STICK_R / reach), dy * (STICK_R / reach));
+  }
+
+  // How far (px) the knob travels from the base in the direction (ux, uy) for a full push: STICK_R, or
+  // the room left before the screen edge (a thumb that landed near the edge still reaches full speed
+  // toward it, and nothing moves at touch-down).
+  _reach(ux, uy) {
+    const j = this._joy;
+    let t = STICK_R;
+    if (ux < 0) t = Math.min(t, (j.bx - j.left) / -ux);
+    else if (ux > 0) t = Math.min(t, (j.right - j.bx) / ux);
+    if (uy < 0) t = Math.min(t, (j.by - j.top) / -uy);
+    else if (uy > 0) t = Math.min(t, (j.bottom - j.by) / uy);
+    return Math.max(REACH_MIN, t - 2);
   }
 
   _endStick() {
@@ -442,7 +475,7 @@ export class Input {
     const mx = (a.x + b.x) / 2;
     const my = (a.y + b.y) / 2;
     this._zoom -= Math.log(d / pi.d); // fingers apart = zoom in
-    this._addLook(mx - pi.mx, my - pi.my); // two-finger drag also orbits
+    this._addLook(mx - pi.mx, my - pi.my, true); // two-finger drag also orbits
     pi.d = d;
     pi.mx = mx;
     pi.my = my;
