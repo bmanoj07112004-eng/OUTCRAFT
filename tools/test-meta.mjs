@@ -864,10 +864,29 @@ test('classic: MAKE THEM FORGET ME resets only the 2D progress; coins, skins, le
   const back = load();
   assert.deepEqual(back.wallet, { coins: 1150, gems: 40 });
   assert.deepEqual([back.adventure.unlocked, back.levels[1], back.inventory.skins, back.hearts], [7, { stars: 3, best: 4200, plays: 2 }, ['explorer', 'scout'], { n: 3, since: T0 }]);
-  assert.deepEqual([back.achievements.claimed, back.tutorial3d, back.settings.music, back.rev], [{ 'first-win': true }, true, false, 1]);
+  assert.deepEqual([back.achievements.claimed, back.tutorial3d, back.settings.music, back.rev], [{ 'first-win': true }, true, false, 2], 'the classic write bumps rev too');
   // No save at all: a plain classic fresh start.
   useStorage(memoryStorage());
   assert.deepEqual(Object.keys(classic.wipe({ seenHowTo: true })).sort(), ['codex', 'daily', 'dex', 'ladder', 'lastPlayed', 'model', 'seenHowTo', 'settings', 'stats']);
+});
+
+test('classic: a stale 2D tab writes only its own fields over newer 3D progress, and 3D tabs see it as newer', () => {
+  useStorage(memoryStorage());
+  const s = load();
+  s.wallet.coins = 500;
+  assert.equal(save(s), true);
+  const c = classic.load(); // the 2D tab loads rev 1
+  const s2 = load();
+  Object.assign(s2.wallet, { coins: 1850 });
+  s2.adventure.unlocked = 12;
+  assert.equal(save(s2), true); // another tab: rev 2
+  c.stats.matches = 7;
+  c.codex.torch = { count: 1, first: '2026-10-01' };
+  classic.save(c); // stale 2D save
+  const raw = stored();
+  assert.deepEqual([raw.wallet.coins, raw.adventure.unlocked, raw.stats.matches, raw.codex.torch.count, raw.rev], [1850, 12, 7, 1, 3]);
+  assert.equal(save(s2), false, 'the 3D tab that last saved rev 2 must reload first');
+  assert.equal(store.saveStatus().reason, 'stale');
 });
 
 // ------------------------------------------------------------ hearts: Candy Crush model

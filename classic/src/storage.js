@@ -38,9 +38,26 @@ export function load() {
   }
 }
 
+// Fields this game owns. The 3D edition shares the save and bumps `rev` on every write: when another tab
+// has written a newer save, only these fields are written over it so its coins, skins and levels survive.
+const OWN = ['model', 'ladder', 'codex', 'dex', 'stats', 'daily', 'seenHowTo', 'tutorialDone', 'lastPlayed', 'tips'];
+
 export function save(state) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    let stored = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(KEY));
+    } catch {}
+    const newer = stored && typeof stored === 'object' && (stored.rev || 0) > (state.rev || 0);
+    let out = state;
+    if (newer) {
+      out = { ...stored };
+      for (const k of OWN) if (k in state) out[k] = state[k];
+      out.settings = { ...stored.settings, sound: state.settings.sound, glass: state.settings.glass };
+    }
+    out.rev = Math.max((stored && stored.rev) || 0, state.rev || 0) + 1;
+    state.rev = out.rev;
+    localStorage.setItem(KEY, JSON.stringify(out));
   } catch {}
 }
 
