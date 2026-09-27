@@ -110,9 +110,9 @@ function tapDriver(name, rng) {
 // glance every 0.5 s on the way) accounts for the rival; early: chance of heading home part full;
 // home: chance of pressing HOME instead of steering home; mag: how far the stick is pushed.
 const STICK = {
-  casual: { react: [0.55, 0.25], noise: 0.4, drift: 0.5, hesitate: 0.16, pause: [0.4, 1.5], pick: [0.55, 0.25], look: 1, watch: 0.05, early: 0.15, home: 0.35, mag: 0.94 },
-  average: { react: [0.32, 0.15], noise: 0.25, drift: 0.45, hesitate: 0.08, pause: [0.3, 1.0], pick: [0.72, 0.2], look: 2, watch: 0.3, early: 0.06, home: 0.25, mag: 1 },
-  skilled: { react: [0.15, 0.08], noise: 0.12, drift: 0.4, hesitate: 0.02, pause: [0.2, 0.5], pick: [0.9, 0.08], look: 3, watch: 0.75, early: 0.02, home: 0.15, mag: 1 },
+  casual: { react: [0.42, 0.18], noise: 0.3, drift: 0.5, hesitate: 0.12, pause: [0.3, 1.2], pick: [0.6, 0.25], look: 2, watch: 0.05, early: 0.1, home: 0.35, mag: 0.97 },
+  average: { react: [0.28, 0.12], noise: 0.22, drift: 0.45, hesitate: 0.07, pause: [0.3, 0.9], pick: [0.75, 0.18], look: 3, watch: 0.3, early: 0.05, home: 0.25, mag: 1 },
+  skilled: { react: [0.14, 0.07], noise: 0.12, drift: 0.4, hesitate: 0.02, pause: [0.2, 0.5], pick: [0.9, 0.08], look: 4, watch: 0.75, early: 0.02, home: 0.15, mag: 1 },
 };
 const HOME = { kind: 'hub' };
 const RIVAL_EDGE = 0.3; // seconds: a watching player avoids a node the rival reaches this much sooner (or less later)
