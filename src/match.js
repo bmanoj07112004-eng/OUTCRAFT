@@ -111,6 +111,7 @@ export class Match {
     this.time = 0;
     this.raceTime = 0; // seconds spent in the 'race' phase (what the time limit counts)
     this.goTime = 0; // match time of the current order's GO (for the speed bonus)
+    this.parScale = 1; // share of the order's materials still missing at GO (scales the speed par)
     this.timeUp = false;
     this.score = 0;
     this.events = [];
@@ -197,6 +198,13 @@ export class Match {
     return need;
   }
 
+  // Share (0..1) of the current order's raw materials an agent still has to gather.
+  missingShare(who) {
+    let total = 0;
+    for (const p of this.order.parts) total += COMPONENTS[p].needs.length;
+    return total ? sumVals(this.needRemaining(who)) / total : 0;
+  }
+
   // Same numbers as needRemaining, written into `out` (every resource id, 0 if not needed) without
   // allocating, for the per-step free-movement checks.
   needInto(who, out) {
@@ -267,8 +275,9 @@ export class Match {
     this.emit({ type: 'complete', who, item: this.order, stars: { ...this.stars } });
     if (who === 'player') {
       this.addScore(SCORE.order, 'order');
-      // Speed bonus: points for every second under par, measured from GO.
-      const par = SCORE.parSeconds[Math.min(this.order.tier, SCORE.parSeconds.length - 1)] || 0;
+      // Speed bonus: points for every second under par, measured from GO. Par shrinks with the stock
+      // already at the Workshop, so a head start from a lost order's leftovers is not rewarded as speed.
+      const par = (SCORE.parSeconds[Math.min(this.order.tier, SCORE.parSeconds.length - 1)] || 0) * this.parScale;
       this.addScore(Math.round(Math.max(0, par - (this.time - this.goTime)) * SCORE.perSecondUnderPar), 'speed');
     }
   }
@@ -1009,6 +1018,7 @@ export class Match {
       if (this.phaseTimer <= 0) {
         this.phase = 'race';
         this.goTime = this.time;
+        this.parScale = this.missingShare('player');
         this.emit({ type: 'go', index: this.orderIndex });
         this.craftCheck('player');
         if (this.phase === 'race') this.craftCheck('rival');

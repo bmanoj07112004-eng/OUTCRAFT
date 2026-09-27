@@ -794,4 +794,29 @@ test('bag full in free mode: one bagFull hint and no walk home; options.autoRetu
   }
 });
 
+test('speed bonus: stock left over from a lost order shrinks the par instead of counting as speed', () => {
+  let checked = 0;
+  for (let s = 0; s < 80 && checked < 5; s++) {
+    let lost = false;
+    let pending = null;
+    playMatch(9000 + s, RIVALS[4], new PlayerModel(), (e, m) => {
+      if (e.type === 'complete' && e.who === 'rival') lost = true;
+      if (e.type === 'go') {
+        const share = m.missingShare('player');
+        assert.equal(m.parScale, share);
+        assert.ok(share >= 0 && share <= 1);
+        pending = lost && share < 1 ? share : null;
+        lost = false;
+      }
+      if (e.type === 'score' && e.reason === 'speed' && pending != null) {
+        const par = SCORE.parSeconds[Math.min(m.order.tier, SCORE.parSeconds.length - 1)] * pending;
+        assert.ok(e.add <= Math.round(par * SCORE.perSecondUnderPar), 'speed points never exceed the scaled par');
+        checked++;
+        pending = null;
+      }
+    });
+  }
+  assert.ok(checked > 0, 'found wins right after a lost order with leftover stock');
+});
+
 console.log(`\n${passed} tests passed`);
