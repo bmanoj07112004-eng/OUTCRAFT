@@ -199,7 +199,7 @@
         const cols = Math.max(1, Math.min(entries.length, num('cols', 7)));
         const rows = Math.ceil(entries.length / cols);
         const SP = 1.45;
-        const ROW = 2.1;
+        const ROW = 2.8;
         const yaw = (num('yaw', 0) * Math.PI) / 180;
         const chars = entries.map((e, i) => {
           const c = e.make();
@@ -249,10 +249,10 @@
           const vf = (camera.fov * Math.PI) / 180;
           const hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect);
           const width = (Math.min(cols, entries.length) - 1) * SP + 2.2;
-          const height = rows * 1.2 + 1.6;
+          const height = rows * 1.5 + 1.4;
           const dist = Math.max(width / 2 / Math.tan(hf / 2), height / 2 / Math.tan(vf / 2)) * num('zoom', 1) + 1.5;
           const lookY = num('lookY', 0.95);
-          camera.position.set(num('camX', 0), lookY + dist * num('pitch', 0.3), centerZ + dist);
+          camera.position.set(num('camX', 0), lookY + dist * num('pitch', rows > 1 ? 0.5 : 0.3), centerZ + dist);
           camera.lookAt(num('camX', 0), lookY, centerZ);
           camera.updateProjectionMatrix();
         }

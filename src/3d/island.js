@@ -183,17 +183,32 @@ const facetJitter = (rng, amt = 0.12, topLift = 0.06) => (cx, cy, cz, nx, ny, nz
   c.multiplyScalar(1 - amt / 2 + rng() * amt + (ny > 0.55 ? topLift : 0));
 };
 
-// Beach height (m) at a distance d outside the land edge; under the tiles it sits hidden at -0.3.
+// Beach height (m) at a distance d outside the land edge; under the tiles it sits just below the lip.
 function beachH(d) {
-  if (d <= 0) return -0.3;
+  if (d <= 0) return -0.14;
   if (d < 1.35) return -0.12 - 0.38 * Math.pow(d / 1.35, 1.5);
   return Math.max(-1.6, -0.5 - (d - 1.35) * 0.9);
 }
 
-// Signed distance (m) from the union of land tiles (positive outside).
-function landSDF(world) {
+// Land plus the sea tiles tucked into its concave corners (two or more land neighbours): the beach and
+// sea follow this smoother outline, so stair-stepped coasts become diagonals and one-tile bays fill in.
+function shoreMask(world) {
+  const m = world.land.slice();
+  const isLand = (x, y) => x >= 0 && y >= 0 && x < W && y < H && world.land[idx(x, y)];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (world.land[idx(x, y)]) continue;
+      const n = isLand(x + 1, y) + isLand(x - 1, y) + isLand(x, y + 1) + isLand(x, y - 1);
+      if (n >= 2) m[idx(x, y)] = true;
+    }
+  }
+  return m;
+}
+
+// Signed distance (m) from the union of the masked tiles (positive outside).
+function landSDF(mask) {
   const cs = [];
-  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (world.land[idx(x, y)]) cs.push(tileX(x), tileZ(y));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (mask[idx(x, y)]) cs.push(tileX(x), tileZ(y));
   const half = TILE / 2;
   return (px, pz) => {
     let best = Infinity;
@@ -703,7 +718,7 @@ export class Island3D {
     this.proxyMat = new THREE.MeshBasicMaterial({ visible: false });
     this.clothMat = new THREE.MeshLambertMaterial({ color: '#ff7b2e', flatShading: true });
     this.clothKey = null;
-    this.smokeMat = new THREE.MeshLambertMaterial({ color: '#f2f0ee', emissive: '#555555', transparent: true, opacity: 0.8, depthWrite: false, flatShading: true });
+    this.smokeMat = new THREE.MeshLambertMaterial({ color: '#ffffff', emissive: '#9a9aa2', transparent: true, opacity: 0.7, depthWrite: false });
 
     // Floating order display: a double-sided card drawn from the item icon, and a spinning gold halo.
     this.cardCanvas = document.createElement('canvas');
@@ -727,7 +742,8 @@ export class Island3D {
     const g = (this.group = new THREE.Group());
     g.name = 'island';
     this.engine.scene.add(g);
-    const sdf = landSDF(world);
+    const sdfLand = landSDF(world.land);
+    const sdf = landSDF(shoreMask(world));
     const zc = tileZ(world.hubY);
     this.hubZ = zc;
 
@@ -743,7 +759,7 @@ export class Island3D {
     // --- ground: tiles + beach + skirt (receives shadows only)
     const ground = new Kit(rng);
     this.buildTiles(ground, world, theme, rng);
-    ground.addRaw(this.terrainGeometry(theme, sdf, R, isoRadii(sdf, R, TERRAIN_ISO), rng));
+    ground.addRaw(this.terrainGeometry(theme, sdf, sdfLand, R, isoRadii(sdf, R, TERRAIN_ISO), rng));
     const groundMesh = this.addMesh(ground.build(), this.toon, false, true);
     groundMesh.name = 'ground';
 
@@ -864,13 +880,13 @@ export class Island3D {
 
   // Beach + rocky skirt as one polar mesh around the island centre. Rings inside the land follow R(angle)
   // (hidden under the tiles, visible only in the gaps), rings outside follow iso-distance contours.
-  terrainGeometry(theme, sdf, R, iso, rng) {
+  terrainGeometry(theme, sdf, sdfLand, R, iso, rng) {
     const sand = new THREE.Color(theme.ground.beach);
     const wet = sand.clone().multiplyScalar(0.78);
     const under = sand.clone().multiplyScalar(0.45).lerp(new THREE.Color(theme.sea.deep), 0.55);
     const soilDark = new THREE.Color(theme.ground.cliffDark);
     const cliff = new THREE.Color(theme.ground.cliff);
-    const inner = [[0, 0], [0.35, 0], [0.62, 0], [1, -2.2], [1, -1.4], [1, -0.8], [1, -0.35], [1, 0]];
+    const inner = [[0, 0], [0.35, 0], [0.6, 0], [1, -3], [1, -2.3], [1, -1.7], [1, -1.2], [1, -0.8], [1, -0.45], [1, -0.2], [1, 0]];
     const nIso = TERRAIN_ISO.length;
     const nTop = inner.length + nIso;
     const skirt = [[0.985, -1.85], [0.94, -2.5], [0.85, -3.35], [0.71, -4.5], [0.52, -5.8], [0.3, -7.1], [0.1, -8.3], [0, -8.9]];
@@ -886,15 +902,20 @@ export class Island3D {
       for (let i = 0; i < nTop; i++) {
         let r;
         let d;
+        let fill = false; // inside a filled bay: flat sand just under the grass lip
         if (i < inner.length) {
           r = Math.max(prev + (i ? 0.05 : 0), R[j] * inner[i][0] + inner[i][1]);
           d = sdf(ca * r, sa * r);
+          if (d <= 0.02 && sdfLand(ca * r, sa * r) > 0.02) {
+            fill = true;
+            d = 0.1;
+          }
         } else {
           r = Math.max(prev + 0.02, iso[j * nIso + i - inner.length]);
           d = TERRAIN_ISO[i - inner.length];
         }
         prev = r;
-        let y = beachH(d);
+        let y = fill ? -0.13 : beachH(d);
         if (i === nTop - 1) {
           y = Math.min(y, -1.3);
           rimR = r;
@@ -903,7 +924,7 @@ export class Island3D {
         P[k] = ca * r;
         P[k + 1] = y;
         P[k + 2] = sa * r;
-        if (d <= 0.02) _c.copy(soilDark);
+        if (d <= 0.02) _c.copy(sand).multiplyScalar(0.7);
         else if (y > -0.44) _c.copy(sand).multiplyScalar(Math.min(1, 0.84 + d * 0.6) * (0.97 + rng() * 0.06));
         else if (y > -0.58) _c.copy(wet);
         else _c.copy(under);
@@ -919,7 +940,7 @@ export class Island3D {
         P[k] = ca * r;
         P[k + 1] = y0 + (last ? 0 : (rng() - 0.5) * 0.35);
         P[k + 2] = sa * r;
-        _c.copy(s === 0 ? under : s % 2 ? soilDark : cliff);
+        _c.copy(s === 0 && theme.sea.kind === 'water' ? under : s % 2 ? soilDark : cliff);
         C[k] = _c.r;
         C[k + 1] = _c.g;
         C[k + 2] = _c.b;
@@ -1198,7 +1219,7 @@ export class Island3D {
     clothMesh.castShadow = true;
     this.group.add(clothMesh);
 
-    this.smoke = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), this.smokeMat, 7);
+    this.smoke = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), this.smokeMat, 7);
     this.smoke.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.smoke.frustumCulled = false;
     this.buildGeos.push(this.smoke.geometry);

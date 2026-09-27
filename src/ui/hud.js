@@ -51,6 +51,10 @@ export class HUD {
     this.mm = { world: null, base: null, lastDraw: 0, colors: null };
     this.score = { target: 0, shown: 0, raf: 0 };
     this.vsState = null;
+    this.bagLast = [];
+    this.madeLast = [];
+    this.ptrLast = { x: NaN, y: NaN, text: null, off: null, ang: NaN };
+    this._tick = () => this._tickScore();
     this._build();
     this._onResize = () => this.resize();
     window.addEventListener('resize', this._onResize);
@@ -66,6 +70,8 @@ export class HUD {
     this.mid = el('div', 'hud-mid');
     this.card = el('div', 'order-card', `<div class="oc-head"><span class="oc-icon-wrap"><img class="oc-icon" alt=""></span><div class="oc-title"><small>ORDER <span class="oc-num"></span></small><b class="oc-name"></b></div></div><div class="oc-parts"></div>`);
     this.meter = el('div', 'hud-meter', `<div class="hm-bar"><i class="hm-fill"></i></div><b class="hm-score">0</b>`);
+    this.hmFill = this.meter.querySelector('.hm-fill');
+    this.hmScore = this.meter.querySelector('.hm-score');
     this.timer = el('div', 'hud-timer', `${svgIcon('clock', 'ht-ic')}<b>0:00</b>`);
     this.mid.append(this.card, this.meter, this.timer);
     this.riv = el('div', 'hud-side hud-riv', `<div class="hud-av-wrap"><span class="av hud-av"></span><b class="hud-tag"></b></div><div class="hud-stars"></div>`);
@@ -146,8 +152,14 @@ export class HUD {
     this.cap.hidden = true;
     this.toastEl.hidden = true;
     this.pointer(null);
+    // A pending vs() promise resolves here; the overlay is removed at once (it takes pointer events).
     this.hideVs(false);
+    for (const t of this.timers) clearTimeout(t);
+    this.timers.clear();
+    this.vsEl.hidden = true;
     this.last = {};
+    this.bagLast.length = 0;
+    this.madeLast.length = 0;
   }
 
   _later(ms, fn) {
@@ -161,18 +173,16 @@ export class HUD {
 
   _anim(node, frames, opts, done) {
     if (!node.animate) {
-      if (done) done();
-      return null;
+      const fake = { cancel: () => clearTimeout(fake.t) };
+      fake.t = this._later(opts.duration || 0, () => done && done(fake));
+      return fake;
     }
     const a = node.animate(frames, opts);
     this.anims.add(a);
-    a.onfinish = () => {
+    // finish/cancel events arrive asynchronously; done(a) lets callers ignore a superseded animation.
+    a.onfinish = a.oncancel = () => {
       this.anims.delete(a);
-      if (done) done();
-    };
-    a.oncancel = () => {
-      this.anims.delete(a);
-      if (done) done();
+      if (done) done(a);
     };
     return a;
   }
@@ -231,9 +241,10 @@ export class HUD {
     this.timer.hidden = !c.timeLimit;
     this.root.classList.toggle('has-meter', !!c.thresholds);
     this.root.classList.toggle('has-timer', !!c.timeLimit);
-    this.score = { target: 0, shown: 0, raf: 0 };
-    this.meter.querySelector('.hm-fill').style.transform = 'scaleX(0)';
-    this.meter.querySelector('.hm-score').textContent = '0';
+    if (this.score.raf) cancelAnimationFrame(this.score.raf);
+    this.score = { target: 0, shown: 0, raf: 0, won: false };
+    this.hmFill.style.transform = 'scaleX(0)';
+    this.hmScore.textContent = '0';
     this.setStars(0, 0);
     this.setBag([], c.bagSize);
     this.setHint('');
@@ -251,16 +262,17 @@ export class HUD {
    */
   setOrder(o) {
     if (!o || !ITEM_BY_ID[o.item]) {
-      if (this.last.order !== null) this.card.hidden = true;
-      this.last.order = null;
+      if (this.last.orderItem !== null) this.card.hidden = true;
+      this.last.orderItem = null;
       return;
     }
-    const made = o.made || [];
-    const key = `${o.item}|${o.index}|${o.total}`;
     const it = ITEM_BY_ID[o.item];
-    if (this.last.order !== key) {
-      this.last.order = key;
-      this.last.made = '';
+    const L = this.last;
+    if (L.orderItem !== o.item || L.orderIndex !== o.index || L.orderTotal !== o.total) {
+      L.orderItem = o.item;
+      L.orderIndex = o.index;
+      L.orderTotal = o.total;
+      this.madeLast.length = 0;
       this.card.hidden = false;
       this.card.querySelector('.oc-icon').src = artURL('item', it.id, 96);
       this.card.querySelector('.oc-name').textContent = it.name;
@@ -271,18 +283,18 @@ export class HUD {
           return `<div class="oc-part" title="${esc(COMPONENTS[p].name)}"><img class="op-comp" alt="" src="${artURL('comp', p, 64)}"><b class="op-name">${esc(COMPONENTS[p].name)}</b><span class="op-res">${needs}</span><i class="op-tick">${svgIcon('check')}</i></div>`;
         })
         .join('');
-      this.card.dataset.n = String(it.parts.length);
+      this.parts = this.card.querySelectorAll('.oc-part');
       this._anim(this.card, [{ transform: 'scale(.6)', opacity: 0 }, { transform: 'scale(1.06)', opacity: 1, offset: 0.6 }, { transform: 'scale(1)' }], { duration: 380, easing: 'ease-out' });
     }
-    const mk = made.map((m) => (m ? 1 : 0)).join('');
-    if (mk !== this.last.made) {
-      const parts = this.card.querySelectorAll('.oc-part');
-      parts.forEach((pe, i) => {
-        const on = !!made[i];
-        if (on && !pe.classList.contains('done')) this._pop(pe);
-        pe.classList.toggle('done', on);
-      });
-      this.last.made = mk;
+    const made = o.made;
+    const n = this.parts.length;
+    for (let i = 0; i < n; i++) {
+      const on = !!(made && made[i]);
+      if (this.madeLast[i] === on) continue;
+      const pe = this.parts[i];
+      if (on && this.madeLast[i] === false) this._pop(pe);
+      pe.classList.toggle('done', on);
+      this.madeLast[i] = on;
     }
   }
 
@@ -290,18 +302,20 @@ export class HUD {
 
   /** Orders won by each side (fills the star slots; new stars pop). */
   setStars(player, rival) {
-    const upd = (side, n, key) => {
-      if (this.last[key] === n) return;
-      const prev = this.last[key] ?? 0;
-      this.last[key] = n;
-      side.querySelectorAll('.hs').forEach((s, i) => {
-        const on = i < n;
-        s.classList.toggle('on', on);
-        if (on && i >= prev) this._pop(s, 1.6);
-      });
-    };
-    upd(this.you, player | 0, 'sp');
-    upd(this.riv, rival | 0, 'sr');
+    this._starsOf(this.you, player | 0, 'sp');
+    this._starsOf(this.riv, rival | 0, 'sr');
+  }
+
+  _starsOf(side, n, key) {
+    if (this.last[key] === n) return;
+    const prev = this.last[key] ?? 0;
+    this.last[key] = n;
+    const stars = side.querySelectorAll('.hs');
+    for (let i = 0; i < stars.length; i++) {
+      const on = i < n;
+      stars[i].classList.toggle('on', on);
+      if (on && i >= prev) this._pop(stars[i], 1.6);
+    }
   }
 
   /** Adventure score (the meter fills toward the 3-star mark; the number counts up smoothly).
@@ -310,29 +324,31 @@ export class HUD {
   setScore(score, won = false) {
     if (!this.cfg.thresholds) return;
     score = Math.max(0, Math.round(+score || 0));
-    if (score !== this.score.target) {
-      this.score.target = score;
-      if (!this.score.raf) this.score.raf = requestAnimationFrame(() => this._tickScore());
-      this.meter.querySelector('.hm-fill').style.transform = `scaleX(${clamp(score / this.meterMax, 0, 1).toFixed(4)})`;
+    won = !!won;
+    const sc = this.score;
+    if (score === sc.target && won === sc.won) return;
+    if (score !== sc.target) {
+      sc.target = score;
+      if (!sc.raf) sc.raf = requestAnimationFrame(this._tick);
+      this.hmFill.style.transform = `scaleX(${clamp(score / this.meterMax, 0, 1).toFixed(4)})`;
     }
-    const litKey = `${score >= 0 ? this.marks.map((m) => (+m.dataset.t > 0 ? score >= +m.dataset.t : won) ? 1 : 0).join('') : ''}`;
-    if (litKey !== this.last.lit) {
-      this.marks.forEach((m, i) => {
-        const on = litKey[i] === '1';
-        if (on && !m.classList.contains('on')) this._pop(m, 1.8);
-        m.classList.toggle('on', on);
-      });
-      this.last.lit = litKey;
+    sc.won = won;
+    for (let i = 0; i < this.marks.length; i++) {
+      const m = this.marks[i];
+      const t = +m.dataset.t;
+      const on = t > 0 ? score >= t : won;
+      if (on === m.classList.contains('on')) continue;
+      if (on) this._pop(m, 1.8);
+      m.classList.toggle('on', on);
     }
   }
 
   _tickScore() {
     const s = this.score;
     const d = s.target - s.shown;
-    s.shown = Math.abs(d) < 1 ? s.target : s.shown + d * 0.18 + Math.sign(d);
-    if ((s.target > s.shown && d < 0) || (s.target < s.shown && d > 0)) s.shown = s.target;
-    this.meter.querySelector('.hm-score').textContent = fmt(s.shown);
-    s.raf = s.shown !== s.target ? requestAnimationFrame(() => this._tickScore()) : 0;
+    s.shown = Math.abs(d) < 1.5 ? s.target : s.shown + d * 0.18;
+    this.hmScore.textContent = fmt(s.shown);
+    s.raf = s.shown !== s.target ? requestAnimationFrame(this._tick) : 0;
   }
 
   /** Seconds of race time left (null hides the timer). Turns red and pulses under 10 s. */
@@ -354,9 +370,11 @@ export class HUD {
 
   /** Bag contents (resource types) and size (3 or 4). A newly added item pops. */
   setBag(items, size = this.cfg.bagSize) {
-    const key = `${size}|${items.join(',')}`;
-    if (key === this.last.bag) return;
-    const prevLen = this.last.bagLen ?? 0;
+    const last = this.bagLast;
+    let same = this.bag.childElementCount === size && last.length === items.length;
+    for (let i = 0; same && i < items.length; i++) same = last[i] === items[i];
+    if (same) return;
+    const prevLen = last.length;
     if (this.bag.childElementCount !== size) {
       this.bag.innerHTML = Array.from({ length: size }, () => '<span class="bag-slot"><img alt="" hidden></span>').join('');
     }
@@ -376,7 +394,8 @@ export class HUD {
       }
     }
     this.bag.classList.toggle('is-full', items.length >= size);
-    this.last.bag = key;
+    last.length = 0;
+    for (let i = 0; i < items.length; i++) last.push(items[i]);
     this.last.bagLen = items.length;
   }
 
@@ -521,28 +540,9 @@ export class HUD {
       }
     }
     g.globalAlpha = 1;
-    const ring = (id, color, r) => {
-      const n = id != null && nodes[id];
-      if (!n) return;
-      g.beginPath();
-      g.arc((n.x + 0.5) * tw, (n.y + 0.5) * th, u * r, 0, Math.PI * 2);
-      g.lineWidth = Math.max(1.5, u * 0.14);
-      g.strokeStyle = color;
-      g.stroke();
-    };
-    ring(s.playerTarget, '#ffffff', 0.55);
-    ring(s.rivalTarget, this.cfg.rival.color, 0.62);
-    const dot = (p, color, r) => {
-      if (!p) return;
-      g.beginPath();
-      g.arc((p.x + 0.5) * tw, (p.y + 0.5) * th, u * r, 0, Math.PI * 2);
-      g.fillStyle = color;
-      g.fill();
-      g.lineWidth = Math.max(1.2, u * 0.1);
-      g.strokeStyle = '#fff';
-      g.stroke();
-    };
-    dot(s.rival, this.cfg.rival.color, 0.3);
+    if (s.playerTarget != null) this._mmRing(g, nodes[s.playerTarget], '#ffffff', 0.55, tw, th, u);
+    if (s.rivalTarget != null) this._mmRing(g, nodes[s.rivalTarget], this.cfg.rival.color, 0.62, tw, th, u);
+    this._mmDot(g, s.rival, this.cfg.rival.color, 0.3, tw, th, u);
     const p = s.player;
     if (p && Number.isFinite(p.heading)) {
       // Facing wedge: heading = atan2(dx, dy) in tile axes (x east, y south).
@@ -557,7 +557,27 @@ export class HUD {
       g.fillStyle = '#fff';
       g.fill();
     }
-    dot(p, this.cfg.player.color || '#3d7bff', 0.32);
+    this._mmDot(g, p, this.cfg.player.color || '#3d7bff', 0.32, tw, th, u);
+  }
+
+  _mmRing(g, n, color, r, tw, th, u) {
+    if (!n) return;
+    g.beginPath();
+    g.arc((n.x + 0.5) * tw, (n.y + 0.5) * th, u * r, 0, Math.PI * 2);
+    g.lineWidth = Math.max(1.5, u * 0.14);
+    g.strokeStyle = color;
+    g.stroke();
+  }
+
+  _mmDot(g, p, color, r, tw, th, u) {
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+    g.beginPath();
+    g.arc((p.x + 0.5) * tw, (p.y + 0.5) * th, u * r, 0, Math.PI * 2);
+    g.fillStyle = color;
+    g.fill();
+    g.lineWidth = Math.max(1.2, u * 0.1);
+    g.strokeStyle = '#fff';
+    g.stroke();
   }
 
   // ---------------------------------------------------------------- floating labels
@@ -691,7 +711,8 @@ export class HUD {
         { transform: 'translate(-50%,-50%) scale(1.06)', opacity: 0 },
       ],
       { duration: dur, easing: 'ease-out' },
-      () => {
+      (a) => {
+        if (this.capAnim !== a) return;
         c.hidden = true;
         this.capAnim = null;
       },
@@ -718,7 +739,8 @@ export class HUD {
         { transform: 'translate(-50%, 0) scale(1)', opacity: 0 },
       ],
       { duration: dur, easing: 'ease-out' },
-      () => {
+      (a) => {
+        if (this.toastAnim !== a) return;
         t.hidden = true;
         this.toastAnim = null;
       },
@@ -788,7 +810,6 @@ export class HUD {
   pointer(p, label = '') {
     if (!p) {
       if (!this.ptr.hidden) this.ptr.hidden = true;
-      this.last.ptr = null;
       return;
     }
     let x;
@@ -822,9 +843,13 @@ export class HUD {
       y = cy + dy * Math.min(1, k);
       ang = Math.atan2(dy, dx);
     }
-    const key = `${Math.round(x)}|${Math.round(y)}|${text}|${off ? 1 : 0}|${ang.toFixed(2)}`;
-    if (key === this.last.ptr) return;
-    this.last.ptr = key;
+    const pl = this.ptrLast;
+    if (!this.ptr.hidden && Math.abs(pl.x - x) < 0.5 && Math.abs(pl.y - y) < 0.5 && pl.text === text && pl.off === off && Math.abs(pl.ang - ang) < 0.01) return;
+    pl.x = x;
+    pl.y = y;
+    pl.text = text;
+    pl.off = off;
+    pl.ang = ang;
     this.ptr.hidden = false;
     this.ptr.classList.toggle('off', off);
     this.ptr.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0)`;
@@ -929,6 +954,7 @@ export class HUD {
   dispose() {
     this.reset();
     if (this.score.raf) cancelAnimationFrame(this.score.raf);
+    this.score.raf = 0;
     window.removeEventListener('resize', this._onResize);
     this.root.innerHTML = '';
     this.mm = { world: null, base: null, lastDraw: 0, colors: null };

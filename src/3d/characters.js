@@ -203,8 +203,8 @@ function rock(r, amt, seed) {
   return g;
 }
 
-const ball = (w = 12, h = 9) => new THREE.SphereGeometry(1, w, h);
-const sphere = (r, w = 14, h = 10) => new THREE.SphereGeometry(r, w, h);
+const ball = (w = 10, h = 7) => new THREE.SphereGeometry(1, w, h);
+const sphere = (r, w = 12, h = 8) => new THREE.SphereGeometry(r, w, h);
 const cyl = (rt, rb, h, seg = 12, open = false) => new THREE.CylinderGeometry(rt, rb, h, seg, 1, open);
 const capsule = (r, len, seg = 10) => new THREE.CapsuleGeometry(r, len, 3, seg);
 const cone = (r, h, seg = 12) => new THREE.ConeGeometry(r, h, seg);
@@ -612,11 +612,11 @@ function buildTorso(k, L, accs) {
   const gold = '#ffd23d';
   const beltY = y(0.47);
   const belt = (color, finish = 'matte', buckle = gold) => {
-    body.add(torus(0.238, 0.024, 6, 26), color, { p: [0, beltY, 0], r: [Math.PI / 2, 0, 0] }, finish);
+    body.add(torus(0.238, 0.024, 5, 20), color, { p: [0, beltY, 0], r: [Math.PI / 2, 0, 0] }, finish);
     if (buckle) body.add(rbox(0.075, 0.055, 0.024, 0.01, 2), buckle, { p: [0, beltY, 0.248] }, 'metal');
   };
   if (L.kind === 'player') {
-    const collar = (color, finish = 'matte') => k.add(torus(0.125, 0.032, 6, 18), color, { p: [0, y(0.82), 0.01], r: [Math.PI / 2 - 0.12, 0, 0] }, finish);
+    const collar = (color, finish = 'matte') => k.add(torus(0.125, 0.032, 5, 16), color, { p: [0, y(0.82), 0.01], r: [Math.PI / 2 - 0.12, 0, 0] }, finish);
     switch (L.hat) {
       case 'cap': // Explorer: collar and a chest pocket
         collar(c.accent);
@@ -651,7 +651,7 @@ function buildTorso(k, L, accs) {
       case 'horns': // Viking: fluffy fur collar
         for (let i = 0; i < 10; i++) {
           const a = (i / 10) * TAU;
-          k.add(new THREE.IcosahedronGeometry(0.06, 1), tint(c.accent, 0.1), { p: [Math.sin(a) * 0.15, y(0.815) + Math.cos(a) * 0.012, Math.cos(a) * 0.15] });
+          k.add(new THREE.IcosahedronGeometry(0.06, 0), tint(c.accent, 0.1), { p: [Math.sin(a) * 0.15, y(0.815) + Math.cos(a) * 0.012, Math.cos(a) * 0.15] });
         }
         break;
       case 'garland': // Festival: marigold necklace with little lights
@@ -659,7 +659,7 @@ function buildTorso(k, L, accs) {
           const a = (i / 12) * TAU;
           const droop = (1 + Math.cos(a)) * 0.5;
           const p = [Math.sin(a) * (0.17 + droop * 0.06), y(0.8) - droop * 0.07, Math.cos(a) * (0.16 + droop * 0.07)];
-          k.add(new THREE.IcosahedronGeometry(0.042, 1), i % 2 ? c.accent : '#ff7a00', { p });
+          k.add(new THREE.IcosahedronGeometry(0.042, 0), i % 2 ? c.accent : '#ff7a00', { p });
         }
         break;
       case 'space': // Astronaut: helmet ring and a chest control box
@@ -705,15 +705,15 @@ function buildTorso(k, L, accs) {
 function buildArm(k, L, s) {
   const c = L.c;
   const cloth = L.cloth;
-  k.add(sphere(0.082, 12, 10), c.body, null, cloth);
+  k.add(sphere(0.082, 10, 7), c.body, null, cloth);
   if (L.longSleeves) {
-    k.add(capsule(0.066, 0.17, 10), c.body, { p: [0, -0.125, 0] }, cloth);
-    if (L.kind === 'player') k.add(torus(0.064, 0.02, 5, 12), L.cloth === 'metal' ? shade(c.body, 0.15) : c.accent, { p: [0, -0.215, 0], r: [Math.PI / 2, 0, 0] }, cloth);
+    k.add(capsule(0.066, 0.17, 9), c.body, { p: [0, -0.125, 0] }, cloth);
+    if (L.kind === 'player') k.add(torus(0.064, 0.02, 4, 10), L.cloth === 'metal' ? shade(c.body, 0.15) : c.accent, { p: [0, -0.215, 0], r: [Math.PI / 2, 0, 0] }, cloth);
   } else {
-    k.add(cyl(0.08, 0.074, 0.15, 12), c.body, { p: [0, -0.06, 0] }, cloth);
-    k.add(capsule(0.052, 0.13, 10), L.c.skin, { p: [0, -0.19, 0] });
+    k.add(cyl(0.08, 0.074, 0.15, 10, true), c.body, { p: [0, -0.06, 0] }, cloth);
+    k.add(capsule(0.052, 0.13, 8), L.c.skin, { p: [0, -0.19, 0] });
   }
-  k.add(sphere(0.074, 12, 10), L.hand, { p: [0, -ARM_LEN, 0.004] }, L.handFinish);
+  k.add(sphere(0.074, 10, 7), L.hand, { p: [0, -ARM_LEN, 0.004] }, L.handFinish);
   if (L.villager && s === 1) {
     // a rolled-up order scroll in the left hand
     const f = k.frame({ p: [0.0, -ARM_LEN + 0.02, 0.06], r: [0.25, 0, 0] });
@@ -726,10 +726,10 @@ function buildArm(k, L, s) {
 function buildLeg(k, L) {
   const c = L.c;
   const fin = L.cloth;
-  k.add(cyl(0.078, 0.07, 0.25, 12), c.pants, { p: [0, -0.13, 0] }, fin);
-  k.add(cyl(0.084, 0.088, 0.06, 12), L.kind === 'player' ? tint(c.boots, 0.14) : c.boots, { p: [0, -0.265, 0] }, fin);
-  k.add(ball(14, 10), c.boots, { p: [0, -0.33, 0.035], s: [0.095, 0.08, 0.13] }, fin);
-  k.add(cyl(1, 1, 1, 14), shade(c.boots, 0.35), { p: [0, -0.392, 0.035], s: [0.094, 0.018, 0.125] });
+  k.add(cyl(0.078, 0.07, 0.25, 10, true), c.pants, { p: [0, -0.13, 0] }, fin);
+  k.add(cyl(0.084, 0.088, 0.06, 10), L.kind === 'player' ? tint(c.boots, 0.14) : c.boots, { p: [0, -0.265, 0] }, fin);
+  k.add(ball(12, 8), c.boots, { p: [0, -0.33, 0.035], s: [0.095, 0.08, 0.13] }, fin);
+  k.add(cyl(1, 1, 1, 12), shade(c.boots, 0.35), { p: [0, -0.392, 0.035], s: [0.094, 0.018, 0.125] });
 }
 
 function starGeo(ro, ri, depth) {
@@ -747,7 +747,7 @@ function starGeo(ro, ri, depth) {
 
 // The tricorn brim: a ring whose edges turn up between three corners.
 function tricornBrim() {
-  const g = new THREE.RingGeometry(0.36, 0.68, 36, 3).rotateX(-Math.PI / 2);
+  const g = new THREE.RingGeometry(0.36, 0.68, 30, 3).rotateX(-Math.PI / 2);
   const p = g.attributes.position;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i);
@@ -782,7 +782,7 @@ function buildHair(k, hk, L) {
   const fin = L.hairFinish;
   if (L.hair === 'none') return;
   // a cap tilted back: covers the crown and the back of the head, leaves the forehead free
-  hk.add(new THREE.SphereGeometry(HEAD_R * 1.05, 24, 14, 0, TAU, 0, 1.62), col, { r: [L.villager ? -0.95 : -0.45, 0, 0] }, fin);
+  hk.add(new THREE.SphereGeometry(HEAD_R * 1.05, 20, 11, 0, TAU, 0, 1.62), col, { r: [L.villager ? -0.95 : -0.45, 0, 0] }, fin);
   if (L.hair === 'plate' || L.hat === 'helmet' || L.villager) return;
   // fringe: a jagged shell over the forehead that joins the cap
   hk.add(fringeGeo(HEAD_R * 1.05), col, null, fin);
@@ -824,7 +824,7 @@ function buildHat(k, hk, L, accs) {
   switch (L.hat) {
     case 'cap': {
       const f = hk.frame({ r: [-0.04, 0, 0] });
-      f.add(new THREE.SphereGeometry(0.458, 24, 10, 0, TAU, 0, 1.2), c.body, null, L.cloth);
+      f.add(new THREE.SphereGeometry(0.458, 20, 8, 0, TAU, 0, 1.2), c.body, null, L.cloth);
       f.add(new THREE.CylinderGeometry(0.32, 0.32, 0.034, 22, 1, false, -Math.PI / 2, Math.PI), c.accent, { p: [0, 0.17, 0.27], r: [0.16, 0, 0], s: [1.05, 1, 1.15] });
       f.add(ball(), c.accent, { p: [0, 0.455, 0], s: 0.042 });
       f.add(ball(), c.accent, { p: [0, 0.33, 0.33], r: [-0.8, 0, 0], s: [0.075, 0.075, 0.02] });
@@ -834,7 +834,7 @@ function buildHat(k, hk, L, accs) {
     case 'bandana': {
       const band = shade(c.body, 0.28);
       const f = hk.frame({ r: [-0.3, 0, 0] });
-      f.add(new THREE.SphereGeometry(0.456, 24, 10, 0, TAU, 0, 1.3), band);
+      f.add(new THREE.SphereGeometry(0.456, 20, 8, 0, TAU, 0, 1.3), band);
       f.add(ball(), shade(band, 0.1), { p: [0, 0.1, -0.44], s: [0.08, 0.07, 0.06] });
       for (const s of SIDES) f.add(capsule(0.034, 0.12, 6), band, { p: [s * 0.065, -0.02, -0.46], r: [0.35, 0, s * 0.55], s: [1.3, 1, 0.45] });
       for (const [yaw, pitch] of [[0.45, 0.42], [-0.4, 0.5], [0.05, 0.82], [-0.95, 0.3], [0.98, 0.52], [0, 0.45], [-0.55, 0.95], [0.6, 1.0], [1.6, 0.6], [-1.6, 0.62]]) {
@@ -852,8 +852,8 @@ function buildHat(k, hk, L, accs) {
     }
     case 'pirate': {
       const hatCol = c.pants;
-      hk.add(new THREE.SphereGeometry(0.452, 22, 9, 0, TAU, 0, 1.22), hatCol, { p: [0, 0.03, 0] });
-      hk.add(torus(0.415, 0.022, 5, 30), c.accent, { p: [0, 0.18, 0], r: [Math.PI / 2, 0, 0] }, 'metal');
+      hk.add(new THREE.SphereGeometry(0.452, 18, 8, 0, TAU, 0, 1.22), hatCol, { p: [0, 0.03, 0] });
+      hk.add(torus(0.415, 0.022, 4, 26), c.accent, { p: [0, 0.18, 0], r: [Math.PI / 2, 0, 0] }, 'metal');
       const brim = tricornBrim();
       hk.add(brim, hatCol, { p: [0, 0.14, 0] });
       hk.add(flip(tricornBrim()), shade(hatCol, 0.2), { p: [0, 0.135, 0] });
@@ -862,7 +862,7 @@ function buildHat(k, hk, L, accs) {
       for (const s of SIDES) hk.add(ball(6, 5), '#141014', { p: [s * 0.022, 0.305, 0.388], r: [-0.7, 0, 0], s: 0.013 });
       // eye patch over the right eye and its strap
       k.add(ball(), '#141014', { ...surf(-EYE_YAW, EYE_PITCH, 0.03), s: [0.085, 0.1, 0.03] });
-      hk.add(torus(0.45, 0.011, 4, 36), '#141014', { p: [0, 0.02, 0], r: [Math.PI / 2, 0, 0.42], o: 'ZYX' });
+      hk.add(torus(0.45, 0.011, 3, 30), '#141014', { p: [0, 0.02, 0], r: [Math.PI / 2, 0, 0.42], o: 'ZYX' });
       break;
     }
     case 'headband': {
@@ -877,9 +877,9 @@ function buildHat(k, hk, L, accs) {
     }
     case 'helmet': {
       const m = c.body;
-      hk.add(new THREE.SphereGeometry(0.472, 24, 10, 0, TAU, 0, 1.3), m, null, 'metal');
-      hk.add(new THREE.SphereGeometry(0.472, 24, 5, Math.PI / 2 + 0.95, TAU - 1.9, 1.3, 0.62), m, null, 'metal');
-      hk.add(torus(0.458, 0.03, 6, 32), shade(m, 0.12), { p: [0, 0.126, 0], r: [Math.PI / 2, 0, 0] }, 'metal');
+      hk.add(new THREE.SphereGeometry(0.472, 20, 8, 0, TAU, 0, 1.3), m, null, 'metal');
+      hk.add(new THREE.SphereGeometry(0.472, 18, 4, Math.PI / 2 + 0.95, TAU - 1.9, 1.3, 0.62), m, null, 'metal');
+      hk.add(torus(0.458, 0.03, 5, 26), shade(m, 0.12), { p: [0, 0.126, 0], r: [Math.PI / 2, 0, 0] }, 'metal');
       hk.add(rbox(0.055, 0.2, 0.035, 0.014, 2), m, { p: [0, 0.07, 0.458], r: [-0.12, 0, 0] }, 'metal');
       const plume = accKit(accs, 'head', headTop, 'sway');
       plume.add(sphere(0.05, 10, 8), '#ffd23d', { p: [0, headTop[1] + 0.03, 0] }, 'metal');
@@ -887,8 +887,8 @@ function buildHat(k, hk, L, accs) {
       break;
     }
     case 'horns': {
-      hk.add(new THREE.SphereGeometry(0.462, 24, 10, 0, TAU, 0, 1.28), '#aab2bf', null, 'metal');
-      hk.add(torus(0.448, 0.036, 6, 32), c.body, { p: [0, 0.13, 0], r: [Math.PI / 2, 0, 0] });
+      hk.add(new THREE.SphereGeometry(0.462, 20, 8, 0, TAU, 0, 1.28), '#aab2bf', null, 'metal');
+      hk.add(torus(0.448, 0.036, 5, 26), c.body, { p: [0, 0.13, 0], r: [Math.PI / 2, 0, 0] });
       hk.add(rbox(0.07, 0.3, 0.05, 0.02, 2), c.body, { p: [0, 0.34, 0.24], r: [-0.62, 0, 0] });
       for (const s of SIDES) {
         const g = cone(0.078, 0.36, 12);
@@ -910,7 +910,7 @@ function buildHat(k, hk, L, accs) {
       const f = hk.frame({ p: [0, 0.22, 0], r: [-0.28, 0, 0] });
       for (let i = 0; i < 12; i++) {
         const a = (i / 12) * TAU;
-        f.add(new THREE.IcosahedronGeometry(0.068, 1), i % 2 ? c.accent : '#ff7a00', { p: [Math.sin(a) * 0.4, 0, Math.cos(a) * 0.4] });
+        f.add(new THREE.IcosahedronGeometry(0.068, 0), i % 2 ? c.accent : '#ff7a00', { p: [Math.sin(a) * 0.4, 0, Math.cos(a) * 0.4] });
         const b = a + TAU / 24;
         f.add(sphere(0.022, 8, 6), glow || '#fff3b0', { p: [Math.sin(b) * 0.41, 0.03, Math.cos(b) * 0.41] }, glow ? 'glow' : 'matte');
       }
@@ -918,7 +918,7 @@ function buildHat(k, hk, L, accs) {
     }
     case 'space': {
       const g = accKit(accs, 'head', [0, 0, 0], null);
-      g.add(sphere(0.6, 28, 20), '#ffffff', { p: [0, HEAD_C + 0.02, 0] }, 'glass');
+      g.add(sphere(0.6, 20, 14), '#ffffff', { p: [0, HEAD_C + 0.02, 0] }, 'glass');
       const d = [Math.sin(-0.55) * Math.cos(0.6), Math.sin(0.6), Math.cos(-0.55) * Math.cos(0.6)];
       g.add(ball(10, 8), '#ffffff', { p: [d[0] * 0.6, HEAD_C + 0.02 + d[1] * 0.6, d[2] * 0.6], r: [-0.6, -0.55, 0.5], o: 'YXZ', s: [0.09, 0.035, 0.01] }, 'glow');
       g.add(ball(8, 6), '#ffffff', { p: [d[0] * 0.5, HEAD_C + 0.02 + d[1] * 0.42, d[2] * 0.66], r: [-0.4, -0.45, 0.5], o: 'YXZ', s: [0.03, 0.018, 0.008] }, 'glow');
@@ -938,12 +938,12 @@ function buildHat(k, hk, L, accs) {
     }
     case 'wizard': {
       const hatCol = c.body;
-      hk.add(cyl(0.6, 0.6, 0.035, 30), shade(hatCol, 0.1), { p: [0, 0.2, 0] });
+      hk.add(cyl(0.6, 0.6, 0.035, 26), shade(hatCol, 0.1), { p: [0, 0.2, 0] });
       hk.add(torus(0.415, 0.035, 6, 26), c.accent, { p: [0, 0.25, 0], r: [Math.PI / 2, 0, 0] });
       const pivot = [0, HEAD_C + 0.2 * HS[1], 0];
       const top = accKit(accs, 'head', pivot, 'sway');
       const f = top.frame({ p: [0, HEAD_C, 0], s: HS });
-      const g = cone(0.43, 0.8, 22);
+      const g = cone(0.43, 0.8, 18);
       g.translate(0, 0.4, 0);
       bend(g, -0.85, 'z');
       f.add(g, hatCol, { p: [0, 0.2, 0] });
@@ -978,9 +978,9 @@ function buildHat(k, hk, L, accs) {
     case 'straw': {
       const f = hk.frame({ r: [-0.16, 0, 0.06] });
       const straw = '#e9c46a';
-      f.add(cyl(0.64, 0.66, 0.032, 32), straw, { p: [0, 0.22, 0] });
-      f.add(torus(0.655, 0.02, 5, 32), shade(straw, 0.18), { p: [0, 0.22, 0], r: [Math.PI / 2, 0, 0] });
-      f.add(new THREE.SphereGeometry(0.37, 22, 8, 0, TAU, 0, Math.PI / 2), straw, { p: [0, 0.22, 0], s: [1, 0.82, 1] });
+      f.add(cyl(0.64, 0.66, 0.032, 28), straw, { p: [0, 0.22, 0] });
+      f.add(torus(0.655, 0.02, 4, 28), shade(straw, 0.18), { p: [0, 0.22, 0], r: [Math.PI / 2, 0, 0] });
+      f.add(new THREE.SphereGeometry(0.37, 18, 6, 0, TAU, 0, Math.PI / 2), straw, { p: [0, 0.22, 0], s: [1, 0.82, 1] });
       f.add(cyl(0.378, 0.386, 0.075, 24), '#e63946', { p: [0, 0.262, 0] });
       f.add(ball(), '#ffffff', { p: [0.25, 0.3, 0.25], r: [0, 0.8, 0], s: [0.06, 0.06, 0.03] });
       f.add(ball(), '#ffd166', { p: [0.268, 0.3, 0.268], r: [0, 0.8, 0], s: [0.025, 0.025, 0.02] });
@@ -1025,9 +1025,9 @@ function buildSpecies(k, hk, L, accs) {
       for (const s of SIDES) k.add(ball(), '#fff3e6', { ...surf(s * 0.7, -0.3, -0.03, -s * 0.3), s: [0.12, 0.085, 0.07] });
       k.add(ball(), '#2a1f24', { ...surf(0, -0.18, 0.1), s: [0.05, 0.036, 0.036] }, 'glossy');
       const tail = accKit(accs, 'torso', [0, -0.02, -0.2], 'tail');
-      tail.add(ball(), c.body, { p: [0, 0.02, -0.33], r: [-1.1, 0, 0], s: [0.1, 0.19, 0.1] });
-      tail.add(ball(), c.body, { p: [0, 0.13, -0.56], r: [-0.8, 0, 0], s: [0.15, 0.2, 0.15] });
-      tail.add(ball(), '#fff3e6', { p: [0, 0.3, -0.7], r: [-0.4, 0, 0], s: [0.12, 0.13, 0.11] });
+      tail.add(ball(), c.body, { p: [0, 0.03, -0.32], r: [-1.25, 0, 0], s: [0.1, 0.18, 0.1] });
+      tail.add(ball(), c.body, { p: [0, 0.19, -0.52], r: [-0.65, 0, 0], s: [0.15, 0.2, 0.15] });
+      tail.add(ball(), '#fff3e6', { p: [0, 0.39, -0.6], r: [-0.2, 0, 0], s: [0.12, 0.13, 0.11] });
       break;
     }
     case 'crest': {
@@ -1044,11 +1044,11 @@ function buildSpecies(k, hk, L, accs) {
 }
 
 function buildFace(k, hk, L) {
-  if (L.ears) for (const s of SIDES) k.add(ball(), L.c.skin, { ...surf(s * 1.46, -0.12, -0.03), s: [0.07, 0.09, 0.07] });
+  if (L.ears) for (const s of SIDES) k.add(ball(8, 6), L.c.skin, { ...surf(s * 1.46, -0.12, -0.03), s: [0.07, 0.09, 0.07] });
   if (L.visor) {
     hk.add(new THREE.SphereGeometry(HEAD_R + 0.012, 22, 12, Math.PI / 2 - 0.88, 1.76, Math.PI / 2 - 0.4, 0.86), L.visor.color, null, L.visor.finish);
   }
-  if (L.cheeks) for (const s of SIDES) k.add(ball(), mix(L.head, '#ff4f79', 0.42), { ...surf(s * 0.6, -0.27, -0.008), s: [0.07, 0.042, 0.02] });
+  if (L.cheeks) for (const s of SIDES) k.add(ball(8, 5), mix(L.head, '#ff4f79', 0.42), { ...surf(s * 0.6, -0.27, -0.008), s: [0.07, 0.042, 0.02] });
   if (L.brows === 'angry') {
     for (const s of SIDES) k.add(capsule(0.017, 0.07, 6), L.browColor, { ...surf(s * 0.31, 0.24, 0.006, Math.PI / 2 - s * 0.38), s: [1, 1, 0.6] });
   } else if (L.brows === 'bushy') {
@@ -1074,9 +1074,9 @@ function buildEyes(L, mode) {
     } else if (glow) {
       k.add(rbox(0.1, 0.13, 0.03, 0.045, 3), col, surf(yaw, EYE_PITCH, lift - 0.004), fin);
     } else {
-      k.add(ball(14, 10), col, { ...surf(yaw, EYE_PITCH, lift - 0.008), s: [0.068, 0.092, 0.034] }, fin);
-      k.add(ball(8, 6), L.highlight, { ...surf(yaw + 0.05, EYE_PITCH + 0.075, lift + 0.019), s: [0.024, 0.027, 0.01] }, 'glow');
-      k.add(ball(6, 5), L.highlight, { ...surf(yaw - 0.045, EYE_PITCH - 0.075, lift + 0.017), s: 0.011 }, 'glow');
+      k.add(ball(12, 9), col, { ...surf(yaw, EYE_PITCH, lift - 0.008), s: [0.068, 0.092, 0.034] }, fin);
+      k.add(ball(7, 5), L.highlight, { ...surf(yaw + 0.05, EYE_PITCH + 0.075, lift + 0.019), s: [0.024, 0.027, 0.01] }, 'glow');
+      k.add(ball(5, 4), L.highlight, { ...surf(yaw - 0.045, EYE_PITCH - 0.075, lift + 0.017), s: 0.011 }, 'glow');
     }
   }
   return k.build();
@@ -1118,7 +1118,7 @@ function buildPack(k, L, accs) {
       k.add(rbox(0.3, 0.27, 0.14, 0.05, 3), bag, { p: [0, 0.2, -0.29], r: [0.08, 0, 0] });
       k.add(rbox(0.312, 0.13, 0.152, 0.045, 3), flap, { p: [0, 0.3, -0.293], r: [0.08, 0, 0] });
       k.add(rbox(0.06, 0.05, 0.02, 0.01, 2), gold, { p: [0, 0.25, -0.372], r: [0.08, 0, 0] }, 'metal');
-      k.add(torus(0.268, 0.02, 5, 34), shade(bag, 0.15), { p: [0, 0.2, 0], r: [Math.PI / 2, 0, 0.62], o: 'ZYX', s: [L.torsoScale, L.torsoScale, 1] });
+      k.add(torus(0.268, 0.02, 4, 28), shade(bag, 0.15), { p: [0, 0.2, 0], r: [Math.PI / 2, 0, 0.62], o: 'ZYX', s: [L.torsoScale, L.torsoScale, 1] });
       return { base: [0, 0.34, -0.3], float: false };
     }
     case 'basket': {
@@ -1193,7 +1193,7 @@ function built(L) {
   const carry = buildTorso(torso, L, accs);
   const head = new Kit();
   const hk = head.frame({ p: [0, HEAD_C, 0], s: HS });
-  hk.add(sphere(HEAD_R, 26, 18), L.head, null, L.headFinish);
+  hk.add(sphere(HEAD_R, 22, 16), L.head, null, L.headFinish);
   buildFace(head, hk, L);
   buildHair(head, hk, L);
   buildHat(head, hk, L, accs);
@@ -2082,11 +2082,11 @@ export class Preview {
     this.renderer.setSize(w, h, false);
     const cam = this.camera;
     cam.aspect = w / h;
-    // fit a 1.9 m x 2.5 m box (character, hat and pedestal)
+    // fit a 1.8 m x 2.2 m box (character with hat, top of the pedestal)
     const fov = (cam.fov * Math.PI) / 180;
-    const dist = Math.max(1.25 / Math.tan(fov / 2), 0.95 / (Math.tan(fov / 2) * cam.aspect)) + 0.6;
-    cam.position.set(0, 1.25 + dist * 0.12, dist);
-    cam.lookAt(0, 0.88, 0);
+    const dist = Math.max(1.1 / Math.tan(fov / 2), 0.9 / (Math.tan(fov / 2) * cam.aspect)) + 0.5;
+    cam.position.set(0, 0.95 + dist * 0.13, dist);
+    cam.lookAt(0, 0.92, 0);
     cam.updateProjectionMatrix();
   }
 

@@ -207,6 +207,12 @@ function wire() {
   if (wired) return;
   wired = true;
   document.addEventListener('click', (e) => {
+    // A tap on a modal's backdrop closes it when the modal has a close action.
+    if (e.target.classList && e.target.classList.contains('modal')) {
+      const close = callbackFor(e.target.id, 'close');
+      if (close) close();
+      return;
+    }
     const el = e.target.closest('[data-act]');
     if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return;
     const host = el.closest('[data-ui]');
@@ -227,13 +233,17 @@ function wire() {
     if (el.type === 'range') {
       const out = host && host.querySelector(`[data-out="${key}"]`);
       if (out) out.textContent = `${(+value).toFixed(1)}x`;
-      if (e.type === 'input') return;
-    } else play('ui');
+    }
+    // Ranges report on release ('change'); checkboxes fire both events, so only 'change' counts.
+    if (e.type === 'input') return;
+    if (el.type !== 'range') play('ui');
     const fn = host && callbackFor(host.id, 'change');
     if (fn) fn(key, value, el);
   };
   document.addEventListener('change', onSet);
   document.addEventListener('input', onSet);
+  // iOS Safari only applies :active (the button press-down look) when a touch listener exists.
+  document.addEventListener('touchstart', () => {}, { passive: true });
 }
 
 let current = null;
@@ -454,12 +464,12 @@ export function renderTitle(vm, cb = {}) {
 
 // Art direction per world theme: background band colours, road colours, bubble colours, decorations.
 const MAP_STYLE = {
-  meadow: { band: ['#7fd65a', '#b6ec7c'], road: '#fff4d6', edge: '#5c9e3c', bub: ['#6fe0ff', '#1f8fe8', '#136bb8'], rib: ['#4cc23f', '#2c8f25'], deco: ['tree', 'flower', 'bush', 'mushroom', 'tree', 'flower'], dots: 'rgba(255,255,255,.18)' },
-  dunes: { band: ['#ffc566', '#ffe29a'], road: '#fff8e6', edge: '#d0893a', bub: ['#ffd16b', '#ff8a2a', '#c95a0e'], rib: ['#ff9f2e', '#d06a10'], deco: ['cactus', 'palm', 'dune', 'shell', 'cactus', 'palm'], dots: 'rgba(255,255,255,.22)' },
-  frost: { band: ['#a9d4f5', '#e9f5ff'], road: '#ffffff', edge: '#7fb0d8', bub: ['#b5ecff', '#46b0f0', '#2474b8'], rib: ['#5ab8f5', '#2a7ec4'], deco: ['pine', 'snowflake', 'ice', 'snowman', 'pine', 'snowflake'], dots: 'rgba(255,255,255,.35)' },
-  ember: { band: ['#5a2328', '#b9502e'], road: '#ffd9a0', edge: '#3a1614', bub: ['#ffb060', '#ff5a2a', '#b82a10'], rib: ['#ff6a2a', '#b83210'], deco: ['volcano', 'flame', 'rock', 'flame', 'volcano', 'rock'], dots: 'rgba(255,180,120,.12)' },
-  crystal: { band: ['#3a2b86', '#7b5ad8'], road: '#e6dcff', edge: '#2a1f66', bub: ['#d6a8ff', '#9a5bff', '#5a2fc4'], rib: ['#a26bff', '#6a3ad0'], deco: ['crystal', 'shroom', 'gem', 'crystal', 'shroom', 'gem'], dots: 'rgba(200,180,255,.14)' },
-  sky: { band: ['#9cc8ff', '#ffe3f1'], road: '#ffffff', edge: '#c3a8e8', bub: ['#ffb3d9', '#ff5fa8', '#c0307a'], rib: ['#ff7ab8', '#d0408a'], deco: ['cloud', 'balloon', 'isle', 'rainbow', 'cloud', 'balloon'], dots: 'rgba(255,255,255,.3)' },
+  meadow: { band: ['#7fd65a', '#b6ec7c'], bub: ['#6fe0ff', '#1f8fe8', '#136bb8'], rib: ['#4cc23f', '#2c8f25'], deco: ['tree', 'flower', 'bush', 'mushroom', 'tree', 'flower'] },
+  dunes: { band: ['#ffc566', '#ffe29a'], bub: ['#ffd16b', '#ff8a2a', '#c95a0e'], rib: ['#ff9f2e', '#d06a10'], deco: ['cactus', 'palm', 'dune', 'shell', 'cactus', 'palm'] },
+  frost: { band: ['#a9d4f5', '#e9f5ff'], bub: ['#b5ecff', '#46b0f0', '#2474b8'], rib: ['#5ab8f5', '#2a7ec4'], deco: ['pine', 'snowflake', 'ice', 'snowman', 'pine', 'snowflake'] },
+  ember: { band: ['#5a2328', '#b9502e'], bub: ['#ffb060', '#ff5a2a', '#b82a10'], rib: ['#ff6a2a', '#b83210'], deco: ['volcano', 'flame', 'rock', 'flame', 'volcano', 'rock'] },
+  crystal: { band: ['#3a2b86', '#7b5ad8'], bub: ['#d6a8ff', '#9a5bff', '#5a2fc4'], rib: ['#a26bff', '#6a3ad0'], deco: ['crystal', 'shroom', 'gem', 'crystal', 'shroom', 'gem'] },
+  sky: { band: ['#9cc8ff', '#ffe3f1'], bub: ['#ffb3d9', '#ff5fa8', '#c0307a'], rib: ['#ff7ab8', '#d0408a'], deco: ['cloud', 'balloon', 'isle', 'rainbow', 'cloud', 'balloon'] },
 };
 const THEME_ORDER = ['meadow', 'dunes', 'frost', 'ember', 'crystal', 'sky'];
 const MAP = { step: 96, banner: 150, padBottom: 110, padTop: 240, amp: 26 };
@@ -507,9 +517,9 @@ export function renderMap(vm, cb = {}) {
   };
   setText('map-stars', `${fmt(vm.stars || 0)}/${fmt(vm.maxStars || vm.levels.length * 3)}`);
 
-  const worlds = vm.worlds;
-  const bandH = MAP.banner + 10 * MAP.step;
-  const perWorld = Math.max(1, Math.ceil(vm.levels.length / Math.max(1, worlds.length)));
+  const worlds = vm.worlds && vm.worlds.length ? vm.worlds : [{ name: 'Adventure' }];
+  const perWorld = Math.max(1, Math.ceil(vm.levels.length / worlds.length));
+  const bandH = MAP.banner + perWorld * MAP.step;
   const total = MAP.padBottom + worlds.length * bandH + MAP.padTop;
   // Level positions: y measured from the top of the map, x in percent of the path column.
   const pts = vm.levels.map((l, i) => {
@@ -600,10 +610,12 @@ export function renderMap(vm, cb = {}) {
     if (l.boss && l.rivalPortrait) inner += `<span class="lvl-disc"><img class="lvl-boss" alt="" src="${esc(l.rivalPortrait)}"><b class="lvl-num">${l.id}</b></span>`;
     else inner += `<span class="lvl-disc"><b class="lvl-num">${l.id}</b></span>`;
     if (l.state === 'locked') inner += `<span class="lvl-lock">${svgIcon('lock')}</span>`;
-    if (l.state === 'current') inner += `<span class="lvl-pin">${avatar({ portrait: vm.playerPortrait, color: vm.playerColor || '#3d7bff', name: 'You' }, 'pin-av')}</span>`;
-    html += `<button class="${cls}" style="${vars}" data-act="level" data-arg="${l.id}" aria-label="Level ${l.id}${l.state === 'locked' ? ' (locked)' : ''}">${inner}</button>`;
+    // The pin leans away from the next bubble so the two never overlap.
+    const pinSide = pts[i + 1] && pts[i + 1].x > p.x ? 'pin-l' : 'pin-r';
+    if (l.state === 'current') inner += `<span class="lvl-pin ${pinSide}">${avatar({ portrait: vm.playerPortrait, color: vm.playerColor || '#3d7bff', name: 'You' }, 'pin-av')}</span>`;
+    html += `<button class="${cls}" style="${vars}" data-act="level" data-arg="${l.id}"${l.state === 'locked' ? ' data-quiet' : ''} aria-label="Level ${l.id}${l.state === 'locked' ? ' (locked)' : ''}">${inner}</button>`;
   });
-  html += `<div class="map-top" style="top:${MAP.padTop * 0.35}px">${svgIcon('lock', 'mt-ic')}<b>More islands soon!</b></div>`;
+  html += `<div class="map-top" style="top:${MAP.padTop * 0.6}px">${svgIcon('lock', 'mt-ic')}<b>More islands soon!</b></div>`;
   html += '</div>';
   const inner = $('map-inner');
   inner.style.height = `${total}px`;
@@ -802,12 +814,11 @@ function notebookHTML(nb) {
 // ------------------------------------------------------------------ level result
 
 let resultTimers = [];
-let resultRaf = 0;
+let resultGen = 0; // bumps on every stop, so running count-ups end themselves
 function stopResultAnim() {
   resultTimers.forEach(clearTimeout);
   resultTimers = [];
-  if (resultRaf) cancelAnimationFrame(resultRaf);
-  resultRaf = 0;
+  resultGen++;
 }
 function later(ms, fn) {
   resultTimers.push(setTimeout(fn, ms));
@@ -815,9 +826,11 @@ function later(ms, fn) {
 // Counts an element's number up from 0 over `dur` ms (eased), calling tick() every few steps.
 function countUp(el, to, dur, tick) {
   if (!el) return;
+  const gen = resultGen;
   const t0 = performance.now();
   let last = -1;
   const step = (now) => {
+    if (gen !== resultGen) return;
     const k = clamp((now - t0) / dur, 0, 1);
     const v = Math.round(to * (1 - Math.pow(1 - k, 3)));
     if (v !== last) {
@@ -825,9 +838,9 @@ function countUp(el, to, dur, tick) {
       last = v;
     }
     if (tick) tick(k);
-    resultRaf = k < 1 ? requestAnimationFrame(step) : 0;
+    if (k < 1) requestAnimationFrame(step);
   };
-  resultRaf = requestAnimationFrame(step);
+  requestAnimationFrame(step);
 }
 
 /**
@@ -846,6 +859,7 @@ function countUp(el, to, dur, tick) {
  * @param {number} [vm.gems]             gems earned
  * @param {boolean} [vm.hasNext]         NEXT LEVEL is available
  * @param {{name: string, color: string, portrait?: string}} vm.rival
+ * @param {string} [vm.playerPortrait]
  * @param {{player: number, rival: number}} [vm.matchStars]  orders won by each side
  * @param {string} [vm.quote]            the rival's line
  * @param {string} [vm.reason]           fail: what went wrong ("FOX won 3-1", "Time ran out"...)
@@ -900,7 +914,7 @@ export function renderLevelResult(vm, cb = {}) {
     later(tScore + 500, () => {
       card.querySelector('.lr-rewards')?.classList.add('on');
       if (vm.coins) countUp($('lr-coins'), vm.coins, 700, (k) => k < 1 && Math.random() < 0.25 && play('coin'));
-      if (vm.gems) later(150, () => ($('lr-gems').textContent = fmt(vm.gems)));
+      if (vm.gems) countUp($('lr-gems'), vm.gems, 500);
       if (vm.coins || vm.gems) play('coin');
     });
     later(tScore + 900, () => card.querySelector('.lr-badges')?.classList.add('on'));
@@ -935,6 +949,7 @@ export function renderLevelResult(vm, cb = {}) {
  * @param {{name: string, color: string, portrait?: string}} vm.rival
  * @param {{player: number, rival: number}} vm.stars
  * @param {string} [vm.playerColor]
+ * @param {string} [vm.playerPortrait]
  * @param {Array<{id: string, name: string, won: boolean, isNew?: boolean}>} vm.items
  * @param {{snatched: number, outread: number, fooled: number, seconds: number}} vm.stats
  * @param {string} [vm.tip]

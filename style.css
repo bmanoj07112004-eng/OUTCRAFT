@@ -1202,6 +1202,9 @@ button {
   animation: ringPulse 1.5s ease-out infinite;
   pointer-events: none;
 }
+.lvl.current {
+  z-index: 4;
+}
 .lvl-pin {
   position: absolute;
   left: 50%;
@@ -1210,6 +1213,12 @@ button {
   transform: translateX(-50%);
   animation: pinBob 1.3s ease-in-out infinite;
   pointer-events: none;
+}
+.lvl-pin.pin-l {
+  left: -8px;
+}
+.lvl-pin.pin-r {
+  left: calc(100% + 8px);
 }
 .pin-av {
   width: 52px;
@@ -4000,6 +4009,7 @@ button {
 }
 .hud-vs.out {
   animation: fadeOut 0.26s ease forwards;
+  pointer-events: none;
 }
 .vs-half {
   --c: #3d7bff;
@@ -4460,6 +4470,17 @@ button {
     height: 70px;
   }
 }
+/* Phones: the bag and hint sit a little left of centre, clear of the big thumb buttons. */
+@media (max-width: 600px) {
+  .hud-bottom {
+    left: calc(50% - 44px);
+    max-width: calc(100vw - 150px);
+  }
+  .bag-slot {
+    width: 46px;
+    height: 46px;
+  }
+}
 /* Narrow phones */
 @media (max-width: 360px) {
   .cur {
@@ -4483,8 +4504,8 @@ button {
     height: 32px;
   }
   .hud-bottom {
-    max-width: calc(100vw - 150px);
-    left: calc(50% - 30px);
+    left: calc(50% - 40px);
+    max-width: calc(100vw - 130px);
   }
 }
 /* Laptops and landscape: the title menu sits beside the living island; roomier HUD. */
@@ -4652,5 +4673,41 @@ button {
   .hud-minimap {
     width: 52px;
     height: 75px;
+  }
+}
+
+/* Browsers without color-mix(): plain colours instead of the mixed tints. */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  .av {
+    background: var(--c);
+    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.18);
+  }
+  .lvl-num {
+    --o: rgba(20, 20, 60, 0.6);
+  }
+  .mb-ribbon {
+    box-shadow: 0 6px 0 rgba(20, 10, 60, 0.35), 0 10px 18px rgba(20, 10, 60, 0.3);
+  }
+  .mb-ribbon::before,
+  .mb-ribbon::after {
+    background: var(--r2);
+    filter: brightness(0.75);
+  }
+  .stage {
+    background: radial-gradient(circle at 50% 42%, #fff, var(--rc) 85%);
+  }
+  .skin-card {
+    background: linear-gradient(#fff, var(--rc));
+    box-shadow: 0 4px 0 rgba(20, 10, 60, 0.35);
+  }
+  .rival-card.sel {
+    background: #fff;
+    box-shadow: 0 4px 0 rgba(20, 10, 60, 0.35), 0 0 0 3px var(--c);
+  }
+  .rar {
+    box-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+  }
+  .vs-half {
+    background: var(--c);
   }
 }
