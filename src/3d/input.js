@@ -65,6 +65,7 @@ export class Input {
     this._stick = { x: 0, y: 0, mag: 0 };
     this._lookOut = { dx: 0, dy: 0 };
     this._fadeTimer = 0;
+    this._scale = 0.85; // joystick base scale (1 while in use)
 
     this._buildJoystick();
     canvas.style.touchAction = 'none';
@@ -311,7 +312,7 @@ export class Input {
     const ui = this._ui;
     ui.base.style.transition = 'opacity 90ms ease-out';
     ui.base.style.opacity = '1';
-    ui.base.style.scale = '1';
+    this._scale = 1;
     this._drawStick(0, 0);
   }
 
@@ -342,11 +343,11 @@ export class Input {
     const j = this._joy;
     j.x = j.y = j.mag = 0;
     if (!this._ui) return;
-    this._drawStick(0, 0);
     const base = this._ui.base;
-    base.style.transition = 'opacity 160ms ease-in, scale 160ms ease-in';
+    base.style.transition = 'opacity 160ms ease-in, transform 160ms ease-in';
     base.style.opacity = '0';
-    base.style.scale = '0.85';
+    this._scale = 0.85;
+    this._drawStick(0, 0);
     clearTimeout(this._fadeTimer);
     this._fadeTimer = setTimeout(() => this._placeGhost(), 220);
   }
@@ -354,7 +355,8 @@ export class Input {
   _drawStick(dx, dy) {
     const ui = this._ui;
     const j = this._joy;
-    ui.base.style.translate = `${j.bx - BASE / 2}px ${j.by - BASE / 2}px`; // `translate`, so `scale` stays centred
+    // translate, then scale about the centre (transform functions apply right to left)
+    ui.base.style.transform = `translate3d(${j.bx - BASE / 2}px, ${j.by - BASE / 2}px, 0) scale(${this._scale})`;
     ui.knob.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
     ui.arc.style.opacity = j.mag.toFixed(3);
     if (j.mag > 0) ui.arc.style.transform = `rotate(${Math.atan2(dx, -dy)}rad)`;
@@ -365,16 +367,16 @@ export class Input {
     const ui = this._ui;
     if (!ui || this._stickPtr) return;
     const show = this._enabled && this._ghost && this.lastDevice === 'touch';
+    ui.base.style.transition = show ? 'opacity 400ms ease-out' : 'opacity 120ms ease-in';
+    ui.base.style.opacity = show ? '0.35' : '0';
     if (show) {
       const j = this._joy;
       const r = this.canvas.getBoundingClientRect();
       j.bx = r.left + 30 + BASE / 2;
       j.by = r.bottom - 150 - BASE / 2;
+      this._scale = 0.9;
       this._drawStick(0, 0);
     }
-    ui.base.style.transition = show ? 'opacity 400ms ease-out' : 'opacity 120ms ease-in';
-    ui.base.style.scale = show ? '0.9' : '0.85';
-    ui.base.style.opacity = show ? '0.35' : '0';
   }
 
   _buildJoystick() {
@@ -385,7 +387,7 @@ export class Input {
 
     const base = document.createElement('div');
     base.style.cssText = [
-      'position:absolute;left:0;top:0;border-radius:50%;opacity:0;scale:0.85;will-change:translate,opacity',
+      'position:absolute;left:0;top:0;border-radius:50%;opacity:0;will-change:transform,opacity',
       `width:${BASE}px;height:${BASE}px;box-sizing:border-box`,
       'background:radial-gradient(circle closest-side,rgba(16,40,70,0.08) 0,rgba(16,40,70,0.24) 74%,rgba(255,255,255,0.30) 76%,rgba(255,255,255,0.16) 100%)',
       'border:3px solid rgba(255,255,255,0.85)',
