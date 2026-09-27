@@ -1,9 +1,11 @@
 // Persistence (localStorage, this device only) and the day-1 systems built on it: the rivals' shared
 // memory of you, the rival ladder, the Codex of crafted items, Tells (habits to detect and break) and
-// the Daily Commission streak.
+// the Daily Commission streak. The 3D edition adds the wallet, hearts, skins and boosters, Adventure
+// progress, the daily reward calendar, achievements and more settings (see src/economy.js).
 
 import { HABIT_IDS } from './model.js';
 import { RIVALS, DAILY_TWISTS, ITEMS } from './data.js';
+import { SKIN_BY_ID, DEFAULT_SKIN } from './skins.js';
 import { dateKey, daysBetween, hashString, dayNumber } from './rng.js';
 
 const KEY = 'outcraft.v1';
@@ -12,7 +14,7 @@ export const DEX_RULES = { minN: 8, detectLift: 0.25, breakLift: 0.05, relapseLi
 // A Tell is only named when chance cannot explain it: z-test of the rival's hit rate on that habit vs a uniform guess.
 const tellZ = (t) => (t.chance > 0 && t.chance < 1 ? ((t.acc - t.chance) * Math.sqrt(t.n)) / Math.sqrt(t.chance * (1 - t.chance)) : 0);
 
-function fresh() {
+export function fresh() {
   return {
     model: null,
     ladder: { unlocked: 0, beaten: {} },
@@ -20,19 +22,63 @@ function fresh() {
     dex: {},
     stats: { matches: 0, wins: 0, snatched: 0, outread: 0, history: [] },
     daily: { lastKey: null, streak: 0, best: 0, results: {} },
-    settings: { sound: true, glass: false },
+    settings: { sound: true, music: true, glass: false, quality: 'auto', sensitivity: 1, invertY: false, autoReturn: false },
     seenHowTo: false,
     lastPlayed: null,
+    wallet: { coins: 300, gems: 15 },
+    hearts: { n: 5, since: null },
+    inventory: { skins: [DEFAULT_SKIN], equipped: DEFAULT_SKIN, boosters: { boots: 1, backpack: 1, headstart: 0, fog: 0 } },
+    levels: {},
+    adventure: { unlocked: 1 },
+    dailyReward: { lastKey: null, day: 0 },
+    achievements: { claimed: {} },
+    counters: { levelsWon: 0, starsEarned: 0, fakeOuts: 0, outreads: 0, flawless: 0, coinsEarned: 0, quickKey: null, quickPaid: 0 },
   };
+}
+
+const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+// Old or partial saves get every missing field from the defaults, at any depth. A saved value only
+// replaces a default of the same kind, so one corrupt field cannot break the game. Saved keys the
+// defaults do not know (per-level records, codex entries, tutorialDone, tips...) are kept.
+function merge(def, saved) {
+  if (isObj(def)) {
+    if (!isObj(saved)) return def;
+    const out = { ...saved };
+    for (const k of Object.keys(def)) out[k] = merge(def[k], saved[k]);
+    return out;
+  }
+  if (saved === undefined) return def;
+  if (Array.isArray(def)) return Array.isArray(saved) ? saved : def;
+  if (typeof def === 'number') return Number.isFinite(saved) ? saved : def;
+  if (typeof def === 'boolean' || typeof def === 'string') return typeof saved === typeof def ? saved : def;
+  return saved; // null defaults (model, lastKey, since, lastPlayed): whatever was saved
+}
+
+const count = (v) => Math.max(0, Math.floor(v));
+
+// Upgrade any saved object (a v1 save from the 2D game included) to the current shape.
+export function migrate(saved) {
+  const s = merge(fresh(), saved);
+  s.wallet.coins = count(s.wallet.coins);
+  s.wallet.gems = count(s.wallet.gems);
+  s.hearts.n = count(s.hearts.n);
+  if (!Number.isFinite(s.hearts.since)) s.hearts.since = null;
+  const inv = s.inventory;
+  inv.skins = [...new Set(inv.skins.filter((id) => SKIN_BY_ID[id]))];
+  if (!inv.skins.includes(DEFAULT_SKIN)) inv.skins.unshift(DEFAULT_SKIN);
+  if (!inv.skins.includes(inv.equipped)) inv.equipped = DEFAULT_SKIN;
+  for (const id of Object.keys(inv.boosters)) inv.boosters[id] = Number.isFinite(inv.boosters[id]) ? count(inv.boosters[id]) : 0;
+  s.adventure.unlocked = Math.max(1, Math.floor(s.adventure.unlocked));
+  s.dailyReward.day = Math.min(7, count(s.dailyReward.day));
+  return s;
 }
 
 export function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return fresh();
-    const s = JSON.parse(raw);
-    const f = fresh();
-    return { ...f, ...s, ladder: { ...f.ladder, ...s.ladder }, settings: { ...f.settings, ...s.settings }, stats: { ...f.stats, ...s.stats }, daily: { ...f.daily, ...s.daily } };
+    return migrate(JSON.parse(raw));
   } catch {
     return fresh();
   }
