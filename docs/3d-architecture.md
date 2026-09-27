@@ -129,8 +129,11 @@ fooled | matchWin | flawless`. `summary()` gains `score`, `timeUp`, `options`.
 - `levelPassed(level, summary) -> boolean`, `starsFor(level, summary) -> 0..3` (0 = failed, 1 = passed,
   2 and 3 = passed with `summary.score >= thresholds[1|2]`).
 - `levelById(id)`, `worldOf(level)`.
-- Thresholds are calibrated with bot players (`tools/levels.mjs`): a solid "human" bot should reach
-  2 stars on roughly half its wins and 3 stars on roughly one win in five.
+- Thresholds are calibrated with bot players (`tools/levels.mjs`): a mixed population of joystick
+  bots that play through `match.setMove` (casual, average and skilled presets differing in heading
+  noise, reaction delay and choice quality) plus some tap bots. Among the average stick player's passes,
+  roughly half reach 2 stars and one in five reaches 3 stars; 3 stars always sit at least
+  max(400, 10% of the 2-star score) above 2 stars and above any ordinary win (no speed bonus, no reads).
 
 ## Economy (src/economy.js) and save file (src/storage.js)
 

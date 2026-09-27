@@ -417,6 +417,7 @@ function onEvent(e) {
       hud.caption('GO!', { color: '#ffffff', size: 1.5, dur: 800 });
       if (e.index > 0 && Math.random() < 0.5) quip(m.stars.rival > m.stars.player ? 'winOrder' : 'loseOrder', 1400);
       if (e.index === 0 && P.kind === 'daily') hud.toast(`Daily #${P.daily.number}: ${P.twist.name}. ${P.twist.desc}`, { kind: 'info', dur: 3600 });
+      if (e.index === 0 && P.boosters && P.boosters.length && !P.tutorial) hud.toast(`Boosters on: ${P.boosters.map((id) => eco.BOOSTERS[id].name).join(' + ')}`, { kind: 'good', dur: 2600 });
       if (P.tutorial && e.index === 0) {
         const touch = app.input.lastDevice === 'touch';
         hud.toast(touch ? 'Move with the joystick (left thumb). Drag on the right to look around.' : 'Move with WASD or the arrow keys. Drag with the mouse to look around.', { kind: 'info', dur: 5200 });
