@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>OUTCRAFT dev: island</title>
+  <!-- Dev harness for src/3d/engine.js, island.js and fx.js: a live match on a generated island with a bot
+       player. URL params: ?theme=0..5 &quality=low|medium|high|auto &view=hero|top &seed=N &t=warmup-seconds
+       &rival=0..4 &glass=1 &cam=x,y,z,tx,ty,tz -->
+  <script type="importmap">{"imports":{"three":"../vendor/three/three.module.min.js","three/addons/":"../vendor/three/addons/"}}</script>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #111; }
+    canvas { position: fixed; inset: 0; display: block; touch-action: none; }
+    #stats {
+      position: fixed; left: 8px; top: 8px; padding: 6px 9px; border-radius: 8px;
+      font: 600 11px/1.35 ui-monospace, Menlo, Consolas, monospace; color: #fff;
+      background: rgba(20, 16, 32, 0.62); pointer-events: none; white-space: pre;
+    }
+    .pct {
+      position: fixed; transform: translate(-50%, -100%); padding: 2px 6px; border-radius: 6px;
+      font: 800 12px system-ui, sans-serif; color: #fff; background: rgba(29, 21, 48, 0.8); pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game"></canvas>
+  <div id="stats">loading...</div>
+  <script type="module">
+    import * as THREE from 'three';
+    import { Engine } from '../src/3d/engine.js';
+    import { Island3D, routeTiles, tilePos } from '../src/3d/island.js';
+    import { FX } from '../src/3d/fx.js';
+    import { THEMES } from '../src/3d/themes.js';
+    import { Match } from '../src/match.js';
+    import { PlayerModel } from '../src/model.js';
+    import { RIVALS, RES } from '../src/data.js';
+    import { idx } from '../src/world.js';
+    import { mulberry32 } from '../src/rng.js';
+
+    const q = new URLSearchParams(location.search);
+    const clampI = (v, lo, hi) => Math.max(lo, Math.min(hi, Math.floor(v) || 0));
+    const theme = THEMES[clampI(+q.get('theme'), 0, THEMES.length - 1)];
+    const rival = RIVALS[clampI(q.has('rival') ? +q.get('rival') : 2, 0, RIVALS.length - 1)];
+    const viewMode = q.get('view') === 'top' ? 'top' : 'hero';
+    const seed = +(q.get('seed') || 11);
+    const warm = q.has('t') ? +q.get('t') : 14;
+    const glass = q.get('glass') === '1';
+
+    const engine = new Engine(document.getElementById('game'), { quality: q.get('quality') || 'auto' });
+    engine.setTheme(theme);
+    const island = new Island3D(engine);
+    const fx = new FX(engine);
+    fx.setAmbient(theme.ambient);
+
+    const match = new Match({ seed, rival, model: new PlayerModel() });
+    island.build(match.world, theme);
+
+    // A human-ish bot (as in tools/sim.mjs): usually the nearest needed node, sometimes the second.
+    const rng = mulberry32(seed * 31 + 7);
+    const HUB = { x: 4, y: 10 };
+    const sum = (o) => Object.values(o).reduce((a, b) => a + b, 0);
+    const bagSize = () => (match.bagSizeFor ? match.bagSizeFor('player') : match.bagSize);
+    function botTarget(m) {
+      const p = m.player;
+      const need = m.needRemaining('player');
+      if (p.bag.length >= bagSize() || (p.bag.length && !sum(need))) return HUB;
+      const here = idx(p.x, p.y);
+      const c = m.world.nodes
+        .filter((n) => need[n.type] && !n.reserved && n.readyAt - m.time <= 1.5)
+        .sort((a, b) => m.world.nodeField[a.id][here] - m.world.nodeField[b.id][here]);
+      if (!c.length) return p.bag.length ? HUB : null;
+      return rng() < 0.72 || c.length === 1 ? c[0] : c[1];
+    }
+
+    // Placeholder crafters (characters.js is a separate module): capsule body + head.
+    function dummy(color) {
+      const g = new THREE.Group();
+      const mat = new THREE.MeshLambertMaterial({ color });
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.32, 0.5, 4, 10), mat);
+      body.position.y = 0.6;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.36, 14, 10), new THREE.MeshLambertMaterial({ color: '#ffe0bd' }));
+      head.position.y = 1.35;
+      const nose = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), mat);
+      nose.position.set(0, 1.35, 0.34);
+      for (const m of [body, head, nose]) {
+        m.castShadow = true;
+        g.add(m);
+      }
+      engine.scene.add(g);
+      return g;
+    }
+    const pMesh = dummy('#3d7bff');
+    const rMesh = dummy(rival.color);
+    const vMesh = dummy('#8b6bd6');
+    island.villagerPos(vMesh.position);
+
+    const route = [];
+    const tmp = new THREE.Vector3();
+    function eta(m, a, nodeId) {
+      const f = m.world.nodeField[nodeId];
+      const s = a.to || a;
+      const d = f[idx(s.x, s.y)];
+      if (d < 0) return 99;
+      return (d + (a.to ? 1 - a.t : 0)) / a.speed + (a.state === 'think' ? a.timer : 0);
+    }
+    function stepSim(dt) {
+      if (match.phase === 'race' && match.player.state === 'idle' && !match.player.dest) {
+        const t = botTarget(match);
+        if (t) match.command(t.x, t.y);
+      }
+      match.step(dt);
+      for (const e of match.drainEvents()) {
+        if (e.type === 'order') island.setOrderItem(e.item.id, '#ffc83d');
+        else if (!live) continue;
+        else if (e.type === 'gather') fx.burst(island.nodePos(e.node.id, tmp), RES[e.res].light, 16, 4, 0.7);
+        else if (e.type === 'deposit') fx.ring(island.workshopPos(e.who, tmp), e.who === 'player' ? '#3d7bff' : rival.color, 0.7);
+        else if (e.type === 'complete') fx.confetti(island.displayPos(tmp));
+      }
+    }
+    let live = false;
+    for (let t = 0; t < warm && match.phase !== 'end'; t += 1 / 30) stepSim(1 / 30);
+    live = true;
+
+    function place(obj, a, dt) {
+      const x = (a.fx - 4) * 2;
+      const z = (a.fy - 6) * 2;
+      const dx = x - obj.position.x;
+      const dz = z - obj.position.z;
+      if (dx * dx + dz * dz > 1e-5) obj.rotation.y = Math.atan2(dx, dz);
+      obj.position.set(x, 0, z);
+      return Math.hypot(dx, dz) / Math.max(dt, 1e-3);
+    }
+
+    const cam = engine.camera;
+    const camParam = q.get('cam') ? q.get('cam').split(',').map(Number) : null;
+    function setCamera() {
+      if (camParam && camParam.length === 6) {
+        cam.position.set(camParam[0], camParam[1], camParam[2]);
+        cam.lookAt(camParam[3], camParam[4], camParam[5]);
+      } else if (viewMode === 'top') {
+        const portrait = engine.height > engine.width;
+        cam.position.set(0, portrait ? 42 : 25, portrait ? 24 : 19);
+        cam.lookAt(0, -1.2, 1.4);
+      } else {
+        const s = tilePos(2, 10);
+        cam.position.set(s.x + 1, 8.5, s.z + 12.5);
+        cam.lookAt(s.x + 1.8, 0, s.z - 7);
+      }
+    }
+    setCamera();
+    window.addEventListener('resize', setCamera);
+
+    window.__engine = engine;
+    window.__island = island;
+    window.__fx = fx;
+    window.__match = match;
+    const stats = document.getElementById('stats');
+    const labels = [];
+    let last = performance.now();
+    let frames = 0;
+    let acc = 0;
+    function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      acc += dt;
+      while (acc >= 1 / 60) {
+        stepSim(1 / 60);
+        acc -= 1 / 60;
+      }
+      const moving = place(pMesh, match.player, dt);
+      place(rMesh, match.rival, dt);
+      if (moving > 0.5) fx.trail(pMesh.position, '#bcd7ff');
+
+      const need = new Set(match.phase === 'race' ? Object.keys(match.needRemaining('player')) : []);
+      const playerTarget = match.playerTarget ? match.playerTarget() : match.player.dest && match.player.dest.kind === 'node' ? match.player.dest.id : null;
+      const r = match.rival;
+      const rivalTarget = r.dest && r.dest.kind === 'node' ? r.dest.id : null;
+      const rivalFirst = rivalTarget !== null && rivalTarget === playerTarget && eta(match, r, rivalTarget) < eta(match, match.player, rivalTarget);
+      const anchors = island.update(match, dt, now, { need, playerTarget, rivalTarget, rivalColor: rival.color, glass, pred: match.pred, rivalFirst, theme });
+      fx.setRoute(r.dest && match.phase === 'race' ? routeTiles(match, 'rival', route) : null, rival.color, rivalFirst);
+      fx.update(dt, now);
+      engine.render();
+
+      // glass labels (HTML, positioned from the island's anchors)
+      anchors.forEach((a, i) => {
+        let el = labels[i];
+        if (!el) el = labels[i] = document.body.appendChild(Object.assign(document.createElement('div'), { className: 'pct' }));
+        const s = engine.worldToScreen(a.pos);
+        el.style.display = s.visible ? 'block' : 'none';
+        el.style.left = `${s.x}px`;
+        el.style.top = `${s.y}px`;
+        el.textContent = `${Math.round(a.p * 100)}%`;
+      });
+      for (let i = anchors.length; i < labels.length; i++) labels[i].style.display = 'none';
+
+      const info = engine.renderer.info.render;
+      stats.textContent = `${theme.name}  ${engine.level}${engine.quality === 'auto' ? ' (auto)' : ''}\n` +
+        `draw calls ${info.calls}  tris ${info.triangles}\nfps ${engine.fps.toFixed(0)}  phase ${match.phase}  ${match.stars.player}-${match.stars.rival}`;
+      window.__stats = { calls: info.calls, triangles: info.triangles, level: engine.level };
+      if (++frames === 8) window.__ready = true;
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>

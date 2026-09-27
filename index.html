@@ -3,69 +3,137 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <meta name="theme-color" content="#2a7fb8" />
-    <meta name="description" content="OUTCRAFT: a pocket-island crafting race against an AI rival that learns how you move. Get the order, gather, craft it first." />
+    <meta name="theme-color" content="#3a8dff" />
+    <meta name="description" content="OUTCRAFT: a 3D island crafting race against an AI rival that learns how you move. Get the order, gather, craft it first." />
     <meta property="og:title" content="OUTCRAFT" />
     <meta property="og:description" content="Race an AI rival that learns how you move. Craft it first." />
     <title>OUTCRAFT · craft it before your rival does</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%232a7fb8'/%3E%3Crect x='10' y='18' width='44' height='34' rx='10' fill='%238fd672'/%3E%3Cpath d='M22 30h20l-4 16H26z' fill='%23fff8ec'/%3E%3Ccircle cx='32' cy='24' r='7' fill='%23ffc83d'/%3E%3C/svg%3E" />
+    <script type="importmap">{"imports":{"three":"./vendor/three/three.module.min.js","three/addons/":"./vendor/three/addons/"}}</script>
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <!-- 3D world (three.js). Everything else is HTML layered on top. -->
     <canvas id="game" aria-label="OUTCRAFT game"></canvas>
-    <button id="btn-pause" class="pause-btn" aria-label="Pause" hidden>II</button>
 
-    <section id="screen-title" class="screen">
-      <div class="panel title-panel">
-        <h1 class="logo">OUT<span>CRAFT</span></h1>
-        <p class="tag">Race an AI rival that <b>learns how you move</b>.<br />Get the order. Gather. Craft it first.</p>
-        <div id="dossier" class="dossier" hidden></div>
-        <button id="btn-play" class="btn primary"><span class="btn-main">PLAY</span><span id="play-sub" class="btn-sub"></span></button>
-        <button id="btn-daily" class="btn daily"><span class="btn-main">DAILY COMMISSION <span id="daily-num"></span></span><span id="daily-sub" class="btn-sub"></span></button>
-        <div class="row">
-          <button id="btn-codex" class="btn ghost">CODEX <span id="codex-count" class="pill"></span></button>
-          <button id="btn-how" class="btn ghost">HOW TO PLAY</button>
-        </div>
-        <div class="foot">
-          <button id="btn-sound" class="link">Sound: on</button>
-          <span>·</span>
-          <a id="link-doc" class="link" href="#" target="_blank" rel="noopener">Design doc</a>
-          <span>·</span>
-          <button id="btn-about" class="link">About</button>
-          <span>·</span>
-          <span>Lila Games design test prototype</span>
-        </div>
+    <!-- In-match HUD: built by src/ui/hud.js -->
+    <div id="hud" class="hud" hidden></div>
+
+    <!-- Currency bar, shown on menu screens marked data-topbar -->
+    <header id="topbar" class="topbar" data-ui hidden>
+      <button class="cur cur-hearts" data-act="hearts" aria-label="Hearts">
+        <span class="cur-ic"><svg class="ic"><use href="#ic-heart" /></svg><b id="tb-hearts">5</b></span>
+        <span class="cur-val" id="tb-hearts-t">FULL</span>
+        <i class="cur-plus"><svg class="ic"><use href="#ic-plus" /></svg></i>
+      </button>
+      <button class="cur cur-coins" data-act="coins" aria-label="Coins">
+        <span class="cur-ic"><svg class="ic"><use href="#ic-coin" /></svg></span>
+        <span class="cur-val" id="tb-coins">0</span>
+        <i class="cur-plus"><svg class="ic"><use href="#ic-plus" /></svg></i>
+      </button>
+      <button class="cur cur-gems" data-act="gems" aria-label="Gems">
+        <span class="cur-ic"><svg class="ic"><use href="#ic-gem" /></svg></span>
+        <span class="cur-val" id="tb-gems">0</span>
+        <i class="cur-plus"><svg class="ic"><use href="#ic-plus" /></svg></i>
+      </button>
+    </header>
+
+    <!-- ============================================================ loading -->
+    <section id="screen-loading" class="screen screen-loading" data-ui>
+      <div class="load-box">
+        <h1 class="logo"><span class="logo-out">OUT</span><span class="logo-craft">CRAFT</span></h1>
+        <div class="load-track"><i id="load-bar"></i></div>
+        <p id="load-text" class="load-text">Building the island…</p>
       </div>
     </section>
 
-    <section id="screen-rivals" class="screen center">
-      <div class="panel scroll">
-        <h2>CHOOSE YOUR RIVAL</h2>
-        <p class="fine">Every rival shares one notebook about you. The stronger they are, the more of it they use.</p>
-        <div id="rival-list" class="rival-list"></div>
-        <button id="btn-race" class="btn primary">RACE</button>
-        <button id="btn-rivals-back" class="btn ghost">BACK</button>
-      </div>
-    </section>
-
-    <section id="screen-how" class="screen">
+    <!-- ============================================================ no WebGL -->
+    <section id="screen-nogl" class="screen screen-dim" data-ui hidden>
       <div class="panel">
-        <h2>HOW TO PLAY</h2>
-        <ol class="rules">
-          <li>The villager posts an <b>order</b>. The card at the top shows its recipe.</li>
-          <li><b>Tap a resource with a gold ring</b> to walk over and gather it. Your bag holds 3.</li>
-          <li>Tap the <b>Workshop</b> to drop things off. Parts craft themselves.</li>
-          <li>Finish the item before your rival. <b>First to 3 orders wins.</b></li>
-        </ol>
-        <p class="fine">Your rival <b>learns how you move</b> and races you for the same resources. Its dotted line shows where it is going. Don't be predictable, and steal its targets.</p>
-        <button id="btn-how-ok" class="btn primary">GOT IT</button>
+        <div class="ribbon"><span>OH NO!</span></div>
+        <h2 class="panel-h">3D is not available</h2>
+        <p class="fine">This browser or device could not start WebGL, which the 3D edition needs. <span id="nogl-reason"></span></p>
+        <p class="fine">The original 2D game plays everywhere, with the same rivals that learn how you move.</p>
+        <a class="btn btn-green btn-lg" href="classic/"><span class="btn-main">PLAY CLASSIC 2D</span></a>
       </div>
     </section>
 
-    <section id="screen-results" class="screen center">
-      <div class="panel scroll">
+    <!-- ============================================================ title -->
+    <section id="screen-title" class="screen screen-title" data-ui data-topbar hidden>
+      <div class="title-logo">
+        <h1 class="logo"><span class="logo-out">OUT</span><span class="logo-craft">CRAFT</span></h1>
+        <p class="logo-tag">Race an AI rival that <b>learns how you move</b></p>
+      </div>
+      <nav class="side-btns side-left" aria-label="Extras">
+        <button class="side-btn" data-act="dailyReward"><span class="sb-disc">
+          <svg class="ic"><use href="#ic-gift" /></svg></span><span class="sb-lbl">Daily</span><i class="badge" id="badge-daily" hidden>!</i></button>
+        <button class="side-btn" data-act="achievements"><span class="sb-disc">
+          <svg class="ic"><use href="#ic-trophy" /></svg></span><span class="sb-lbl">Goals</span><i class="badge" id="badge-ach" hidden></i></button>
+        <button class="side-btn" data-act="codex"><span class="sb-disc">
+          <svg class="ic"><use href="#ic-book" /></svg></span><span class="sb-lbl">Codex</span><i class="badge badge-info" id="badge-codex" hidden></i></button>
+      </nav>
+      <nav class="side-btns side-right" aria-label="Shop and settings">
+        <button class="side-btn sb-shop" data-act="shop"><span class="sb-disc">
+          <svg class="ic"><use href="#ic-shop" /></svg></span><span class="sb-lbl">Shop</span></button>
+        <button class="side-btn sb-set" data-act="settings"><span class="sb-disc">
+          <svg class="ic ic-glyph"><use href="#ic-gear" /></svg></span><span class="sb-lbl">Settings</span></button>
+      </nav>
+      <div class="title-menu">
+        <div id="title-dossier" class="dossier" hidden></div>
+        <button class="btn btn-green btn-xl btn-play btn-stack" data-act="play">
+          <span class="btn-main"><svg class="ic bi-inline"><use href="#ic-play" /></svg> PLAY</span>
+          <span class="btn-sub" id="title-level">Level 1</span>
+        </button>
+        <div class="row">
+          <button class="btn btn-orange btn-mode" id="btn-title-daily" data-act="daily">
+            <svg class="ic mode-ic"><use href="#ic-cal" /></svg>
+            <span class="mode-txt"><span class="btn-main">DAILY</span><span class="btn-sub" id="title-daily-sub"></span></span>
+          </button>
+          <button class="btn btn-blue btn-mode" data-act="quick">
+            <svg class="ic mode-ic"><use href="#ic-swords" /></svg>
+            <span class="mode-txt"><span class="btn-main">QUICK RACE</span><span class="btn-sub" id="title-quick-sub"></span></span>
+          </button>
+        </div>
+        <nav class="title-foot">
+          <button class="link" data-act="how">How to play</button><span>·</span>
+          <button class="link" data-act="about">About</button><span>·</span>
+          <a class="link" href="classic/">Classic 2D</a><span>·</span>
+          <a class="link" id="title-docs" href="https://github.com/bmanoj07112004-eng/OUTCRAFT" target="_blank" rel="noopener">Design docs</a>
+        </nav>
+      </div>
+    </section>
+
+    <!-- ============================================================ level map -->
+    <section id="screen-map" class="screen screen-map" data-ui data-topbar hidden>
+      <div class="map-scroll" id="map-scroll"><div class="map-inner" id="map-inner"></div></div>
+      <div class="map-head">
+        <button class="ibtn ibtn-back" data-act="back" aria-label="Back"><svg class="ic"><use href="#ic-back" /></svg></button>
+        <div class="map-title">ADVENTURE</div>
+        <div class="map-stars"><svg class="ic"><use href="#ic-star" /></svg><b id="map-stars">0/180</b></div>
+      </div>
+      <button class="map-jump" id="map-jump" data-act="jump" hidden aria-label="Scroll to your level">
+        <svg class="ic"><use href="#ic-back" /></svg><b id="map-jump-n">1</b>
+      </button>
+    </section>
+
+    <!-- ============================================================ quick race: rival ladder -->
+    <section id="screen-rivals" class="screen screen-dim" data-ui hidden>
+      <div class="panel panel-scroll">
+        <div class="ribbon ribbon-blue"><span>QUICK RACE</span></div>
+        <p class="fine center">Every rival shares one notebook about you. The stronger they are, the more of it they use.</p>
+        <div id="rival-list" class="rival-list"></div>
+        <button class="btn btn-green btn-lg" data-act="race"><span class="btn-main" id="btn-race-t">RACE</span></button>
+        <button class="btn btn-white" data-act="back">BACK</button>
+      </div>
+    </section>
+
+    <!-- ============================================================ quick race / daily results -->
+    <section id="screen-results" class="screen screen-dim" data-ui hidden>
+      <div class="panel panel-scroll results-panel">
+        <div id="res-banner" class="ribbon"><span>VICTORY!</span></div>
         <div id="res-title" class="res-title"></div>
         <div id="res-score" class="res-score"></div>
+        <div id="res-coins" class="res-coins" hidden></div>
         <div id="res-items" class="res-items"></div>
         <div id="res-stats" class="res-stats"></div>
         <div id="res-unlock" class="res-unlock" hidden></div>
@@ -74,36 +142,142 @@
         <blockquote id="res-quote" class="quote"></blockquote>
         <div id="res-daily" class="res-daily" hidden></div>
         <div class="row">
-          <button id="btn-again" class="btn primary">REMATCH</button>
-          <button id="btn-next" class="btn">NEXT RIVAL</button>
+          <button class="btn btn-green" data-act="again"><span class="btn-main" id="btn-res-again-t">REMATCH</span></button>
+          <button class="btn btn-blue" id="btn-res-next" data-act="next"><span class="btn-main">NEXT RIVAL</span></button>
         </div>
         <div class="row">
-          <button id="btn-share" class="btn ghost">SHARE</button>
-          <button id="btn-res-codex" class="btn ghost">CODEX</button>
-          <button id="btn-menu" class="btn ghost">MENU</button>
+          <button class="btn btn-white btn-sm" data-act="share"><svg class="ic bi-inline"><use href="#ic-share" /></svg> <span id="btn-res-share-t">SHARE</span></button>
+          <button class="btn btn-white btn-sm" data-act="codex">CODEX</button>
+          <button class="btn btn-white btn-sm" data-act="menu">MENU</button>
         </div>
       </div>
     </section>
 
-    <section id="screen-codex" class="screen center">
-      <div class="panel scroll">
-        <h2>CODEX</h2>
+    <!-- ============================================================ shop -->
+    <section id="screen-shop" class="screen screen-full screen-shop" data-ui data-topbar hidden>
+      <div class="scr-head">
+        <button class="ibtn ibtn-back" data-act="back" aria-label="Back"><svg class="ic"><use href="#ic-back" /></svg></button>
+        <h2 class="scr-title">SHOP</h2>
+      </div>
+      <div class="tabs" id="shop-tabs">
+        <button class="tab on" data-act="tab" data-arg="skins">Skins</button>
+        <button class="tab" data-act="tab" data-arg="boosters">Boosters</button>
+        <button class="tab" data-act="tab" data-arg="hearts">Hearts &amp; Gems</button>
+      </div>
+      <div class="scr-body">
+        <div class="shop-pane" data-pane="skins">
+          <div class="shop-top">
+            <div class="stage" id="shop-stage">
+              <div class="stage-glow"></div>
+              <div class="stage-pedestal"></div>
+              <img id="shop-fallback" class="stage-fallback" alt="" hidden />
+              <canvas id="shop-preview" class="stage-canvas"></canvas>
+            </div>
+            <div class="skin-info" id="shop-skin-info"></div>
+          </div>
+          <div class="skin-grid" id="shop-skin-grid"></div>
+        </div>
+        <div class="shop-pane" data-pane="boosters" hidden>
+          <p class="fine center">Pick boosters on the level popup before you play. One of each per level.</p>
+          <div class="boost-list" id="shop-boost-list"></div>
+        </div>
+        <div class="shop-pane" data-pane="hearts" hidden>
+          <div class="card hearts-card" id="shop-hearts-card"></div>
+          <h3 class="sub-h">Swap gems for coins</h3>
+          <div class="xchg-row" id="shop-exchange"></div>
+          <p class="fine center">Gems come from boss levels, new stars, daily rewards and achievements.</p>
+        </div>
+        <p class="shop-foot">Everything here is bought with coins and gems you earn by playing. <b>No real money.</b></p>
+      </div>
+    </section>
+
+    <!-- ============================================================ achievements -->
+    <section id="screen-achievements" class="screen screen-full screen-ach" data-ui data-topbar hidden>
+      <div class="scr-head">
+        <button class="ibtn ibtn-back" data-act="back" aria-label="Back"><svg class="ic"><use href="#ic-back" /></svg></button>
+        <h2 class="scr-title">GOALS</h2>
+        <span class="scr-sub" id="ach-summary"></span>
+      </div>
+      <div class="scr-body"><div class="ach-list" id="ach-list"></div></div>
+    </section>
+
+    <!-- ============================================================ settings -->
+    <section id="screen-settings" class="screen screen-full screen-settings" data-ui hidden>
+      <div class="scr-head">
+        <button class="ibtn ibtn-back" data-act="back" aria-label="Back"><svg class="ic"><use href="#ic-back" /></svg></button>
+        <h2 class="scr-title">SETTINGS</h2>
+      </div>
+      <div class="scr-body">
+        <div class="card set-group">
+          <div class="set-row set-col">
+            <span class="set-lbl"><svg class="ic set-ic"><use href="#ic-camera" /></svg>Graphics</span>
+            <div class="seg" id="set-quality">
+              <button data-act="quality" data-arg="auto">Auto</button>
+              <button data-act="quality" data-arg="low">Low</button>
+              <button data-act="quality" data-arg="medium">Medium</button>
+              <button data-act="quality" data-arg="high">High</button>
+            </div>
+          </div>
+          <label class="set-row"><span class="set-lbl"><svg class="ic set-ic"><use href="#ic-sound" /></svg>Sound effects</span><input type="checkbox" class="switch" data-set="sound" /></label>
+          <label class="set-row"><span class="set-lbl"><svg class="ic set-ic"><use href="#ic-music" /></svg>Music</span><input type="checkbox" class="switch" data-set="music" /></label>
+        </div>
+        <div class="card set-group">
+          <div class="set-row set-col">
+            <span class="set-lbl"><svg class="ic set-ic"><use href="#ic-look" /></svg>Camera sensitivity <b class="set-val" id="set-sens-out" data-out="sensitivity">1.0x</b></span>
+            <input type="range" class="slider" min="0.3" max="2" step="0.1" value="1" data-set="sensitivity" aria-label="Camera sensitivity" />
+          </div>
+          <label class="set-row"><span class="set-lbl"><svg class="ic set-ic"><use href="#ic-refresh" /></svg>Invert camera</span><input type="checkbox" class="switch" data-set="invertY" /></label>
+          <label class="set-row"><span class="set-lbl"><svg class="ic set-ic"><use href="#ic-home" /></svg>Auto-walk home when the bag is full</span><input type="checkbox" class="switch" data-set="autoReturn" /></label>
+          <label class="set-row"><span class="set-lbl"><svg class="ic set-ic"><use href="#ic-info" /></svg><span>Show the rival's thoughts<small>its % guess on each resource</small></span></span><input type="checkbox" class="switch" data-set="glass" /></label>
+        </div>
+        <div class="row">
+          <button class="btn btn-blue btn-sm" data-act="how">HOW TO PLAY</button>
+          <button class="btn btn-blue btn-sm" data-act="about">ABOUT</button>
+        </div>
+        <button class="btn btn-red btn-sm set-reset" data-act="reset">RESET ALL PROGRESS</button>
+        <p class="fine center" id="set-info"></p>
+      </div>
+    </section>
+
+    <!-- ============================================================ codex + tells -->
+    <section id="screen-codex" class="screen screen-full screen-codex" data-ui hidden>
+      <div class="scr-head">
+        <button class="ibtn ibtn-back" data-act="back" aria-label="Back"><svg class="ic"><use href="#ic-back" /></svg></button>
+        <h2 class="scr-title">CODEX</h2>
+        <span class="scr-sub" id="codex-count"></span>
+      </div>
+      <div class="scr-body">
         <p class="fine">Everything you have crafted first. Win orders to fill it.</p>
         <div id="codex-grid" class="codex-grid"></div>
-        <h2 class="mt">YOUR TELLS</h2>
+        <h3 class="sub-h">YOUR TELLS</h3>
         <p class="fine">Habits your rivals caught you in. <b>Detect</b> them by getting snatched; <b>break</b> them by playing a match where they stop working.</p>
         <div id="tells-grid" class="tells-grid"></div>
-        <div id="codex-meta" class="fine"></div>
-        <div class="row">
-          <button id="btn-codex-back" class="btn primary">BACK</button>
-          <button id="btn-forget" class="btn ghost danger">MAKE THEM FORGET ME</button>
-        </div>
+        <div id="codex-meta" class="fine codex-meta"></div>
+        <button class="btn btn-white btn-sm forget" data-act="forget">MAKE THEM FORGET ME</button>
       </div>
     </section>
 
-    <section id="screen-about" class="screen center">
-      <div class="panel scroll about">
-        <h2>ABOUT OUTCRAFT</h2>
+    <!-- ============================================================ how to play -->
+    <section id="screen-how" class="screen screen-dim" data-ui hidden>
+      <div class="panel panel-scroll how-panel">
+        <div class="ribbon ribbon-blue"><span>HOW TO PLAY</span></div>
+        <ol class="how-steps">
+          <li><span class="hs-ic hs-order"><svg class="ic"><use href="#ic-flag" /></svg></span><p>The villager posts an <b>order</b>. The card at the top shows its recipe and the resources each part needs.</p></li>
+          <li><span class="hs-ic hs-move"><i class="stick"></i></span><p><b>Move</b> with the joystick (left thumb) or <b>WASD</b> / arrows. <b>Drag</b> on the right side (or with the mouse) to look around.</p></li>
+          <li><span class="hs-ic hs-tap"><svg class="ic ic-glyph"><use href="#ic-hand" /></svg></span><p><b>Tap a resource</b> with a gold ring to auto-run to it. <b>Walk into resources</b> you need to gather them. Your bag holds 3.</p></li>
+          <li><span class="hs-ic hs-home"><svg class="ic ic-glyph"><use href="#ic-home" /></svg></span><p><b>Walk into the Workshop</b> to drop things off; parts craft themselves. <b>Home</b> runs you there, <b>Interact</b> grabs what is in reach.</p></li>
+          <li><span class="hs-ic hs-star"><svg class="ic"><use href="#ic-star" /></svg></span><p>Finish the item before your rival. <b>First to 3 orders wins.</b></p></li>
+        </ol>
+        <p class="fine">Your rival <b>learns how you move</b> and races you for the same resources. Its dotted line shows where it is going. Don't be predictable, and steal its targets.</p>
+        <p class="fine keys">Keys: <kbd>WASD</kbd> move · <kbd>E</kbd> interact · <kbd>Space</kbd> home · <kbd>P</kbd> pause</p>
+        <button class="btn btn-green btn-lg" data-act="ok"><span class="btn-main" id="how-ok-t">GOT IT</span></button>
+      </div>
+    </section>
+
+    <!-- ============================================================ about -->
+    <section id="screen-about" class="screen screen-dim" data-ui hidden>
+      <div class="panel panel-scroll about">
+        <div class="ribbon ribbon-blue"><span>ABOUT OUTCRAFT</span></div>
         <div class="about-time">
           <div><span>STARTED</span><b>23 Sep 2026 · 1:07 pm IST</b></div>
           <div><span>COMPLETED</span><b id="about-done">23 Sep 2026</b></div>
@@ -118,23 +292,44 @@
           <p>No accounts. No trackers. No unnecessary network features. The game's core experience runs locally on the device.</p>
         </div>
         <div class="row">
-          <a id="about-doc" class="btn ghost" href="#" target="_blank" rel="noopener">DESIGN DOCS</a>
-          <button id="btn-about-back" class="btn primary">BACK</button>
+          <a id="about-doc" class="btn btn-white" href="https://github.com/bmanoj07112004-eng/OUTCRAFT" target="_blank" rel="noopener">DESIGN DOCS</a>
+          <button class="btn btn-green" data-act="back">BACK</button>
         </div>
       </div>
     </section>
 
-    <section id="screen-pause" class="screen center">
-      <div class="panel">
-        <h2>PAUSED</h2>
-        <label class="toggle"><input type="checkbox" id="chk-glass" /> Show the rival's thoughts (its % guess on each node)</label>
-        <button id="btn-resume" class="btn primary">RESUME</button>
-        <button id="btn-quit" class="btn ghost">QUIT MATCH</button>
-      </div>
-    </section>
+    <!-- ============================================================ modals -->
+    <div id="modal-level" class="modal" data-ui hidden><div class="modal-card lvl-card" id="level-card"></div></div>
+    <div id="modal-result" class="modal" data-ui hidden><div class="modal-card result-card" id="result-card"></div></div>
+    <div id="modal-daily" class="modal" data-ui hidden><div class="modal-card daily-card" id="daily-card"></div></div>
 
-    <div id="toast" class="toast" hidden></div>
-    <noscript><p style="padding: 2rem">OUTCRAFT needs JavaScript.</p></noscript>
+    <div id="modal-pause" class="modal" data-ui hidden>
+      <div class="modal-card pause-card">
+        <div class="ribbon ribbon-blue"><span>PAUSED</span></div>
+        <p class="pause-title" id="pause-title"></p>
+        <button class="btn btn-green btn-lg" data-act="resume"><span class="btn-main"><svg class="ic bi-inline"><use href="#ic-play" /></svg> RESUME</span></button>
+        <div class="row">
+          <button class="btn btn-blue" id="pause-restart" data-act="restart"><svg class="ic bi-inline"><use href="#ic-refresh" /></svg> RESTART</button>
+          <button class="btn btn-blue" data-act="settings"><svg class="ic bi-inline"><use href="#ic-gear" /></svg> SETTINGS</button>
+        </div>
+        <label class="set-row pause-toggle"><span class="set-lbl"><span>Show the rival's thoughts<small>its % guess on each resource</small></span></span><input type="checkbox" class="switch" id="pause-glass" data-set="glass" /></label>
+        <button class="btn btn-red" data-act="quit"><svg class="ic bi-inline"><use href="#ic-exit" /></svg> <span id="pause-quit-t">QUIT</span></button>
+      </div>
+    </div>
+
+    <div id="modal-confirm" class="modal" data-ui hidden>
+      <div class="modal-card confirm-card">
+        <h2 class="panel-h" id="confirm-title">Are you sure?</h2>
+        <p class="fine center" id="confirm-text"></p>
+        <div class="row">
+          <button class="btn btn-white" id="confirm-cancel" data-act="cancel">CANCEL</button>
+          <button class="btn btn-green" id="confirm-ok" data-act="ok">OK</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+    <noscript><p style="padding: 2rem; color: #fff">OUTCRAFT needs JavaScript. <a href="classic/" style="color: #fff">Classic 2D</a> needs it too, sorry!</p></noscript>
     <script type="module" src="src/main.js"></script>
   </body>
 </html>

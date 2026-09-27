@@ -1,0 +1,410 @@
+<!doctype html>
+<!-- Dev harness for src/3d/camera.js + src/3d/input.js: a procedural test field with a capsule standing in
+     for the player, driven by input.stick through camera.moveFromStick at 7 m/s. Tap the ground to walk
+     there; buttons on the right switch camera modes. ?intro=1 starts with the fly-in, ?ghost=1 shows the
+     resting joystick hint. window.__dbg exposes the objects for automated checks. -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>OUTCRAFT dev · camera and input</title>
+    <link rel="icon" href="data:," />
+    <script type="importmap">{"imports":{"three":"../vendor/three/three.module.min.js","three/addons/":"../vendor/three/addons/"}}</script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #bfe4ff;
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        overscroll-behavior: none;
+      }
+      #game {
+        position: fixed;
+        inset: 0;
+        display: block;
+        width: 100%;
+        height: 100%;
+        touch-action: none;
+      }
+      #dbg {
+        position: fixed;
+        left: 10px;
+        top: 10px;
+        padding: 8px 11px;
+        border-radius: 12px;
+        background: rgba(14, 32, 56, 0.62);
+        color: #fff;
+        font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre;
+        pointer-events: none;
+      }
+      .modes {
+        position: fixed;
+        right: 10px;
+        top: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .modes button {
+        border: 0;
+        border-radius: 999px;
+        padding: 7px 12px;
+        background: rgba(255, 255, 255, 0.9);
+        color: #1d3b5c;
+        font: 700 12px/1 system-ui, sans-serif;
+        box-shadow: 0 3px 8px rgba(10, 30, 60, 0.18);
+      }
+      .modes button.on {
+        background: #ffd34d;
+      }
+      .actions {
+        position: fixed;
+        right: 18px;
+        bottom: 28px;
+        display: flex;
+        gap: 14px;
+        align-items: flex-end;
+      }
+      .actions button {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        border: 3px solid #fff;
+        background: radial-gradient(circle at 40% 30%, #6fd0ff, #2a8fd8);
+        color: #fff;
+        font: 800 22px/1 system-ui, sans-serif;
+        box-shadow: 0 6px 14px rgba(10, 30, 60, 0.3);
+      }
+      .actions button.home {
+        width: 76px;
+        height: 76px;
+        background: radial-gradient(circle at 40% 30%, #ffe08a, #f5a623);
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="game"></canvas>
+    <div id="dbg"></div>
+    <div class="modes">
+      <button id="m-intro">Intro</button>
+      <button id="m-victory">Victory</button>
+      <button id="m-menu">Menu</button>
+      <button id="m-follow">Follow</button>
+      <button id="m-shake">Shake</button>
+      <button id="m-align" class="on">Align</button>
+    </div>
+    <div class="actions">
+      <button id="b-interact" aria-label="Interact">E</button>
+      <button id="b-home" class="home" aria-label="Home">&#8962;</button>
+    </div>
+
+    <script type="module">
+      import * as THREE from 'three';
+      import { ThirdPersonCamera } from '../src/3d/camera.js';
+      import { Input } from '../src/3d/input.js';
+
+      const params = new URLSearchParams(location.search);
+      const $ = (id) => document.getElementById(id);
+      const canvas = $('game');
+      const SPEED = 7; // m/s at full stick
+      const FIELD = 28; // the capsule stays within +-FIELD metres
+
+      // ------------------------------------------------------------ renderer, scene
+      const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+      const scene = new THREE.Scene();
+      // Sky: a vertical gradient drawn once (a screen-space background is fine for a harness).
+      scene.background = (() => {
+        const c = document.createElement('canvas');
+        c.width = 2;
+        c.height = 256;
+        const g = c.getContext('2d');
+        const grd = g.createLinearGradient(0, 0, 0, 256);
+        grd.addColorStop(0, '#4fb0ff');
+        grd.addColorStop(0.55, '#a8dcff');
+        grd.addColorStop(1, '#e4f5ff');
+        g.fillStyle = grd;
+        g.fillRect(0, 0, 2, 256);
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        return t;
+      })();
+      scene.fog = new THREE.Fog('#cdeaff', 38, 95);
+      const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 200);
+
+      scene.add(new THREE.HemisphereLight('#ffffff', '#6b8f58', 1.25));
+      const sun = new THREE.DirectionalLight('#fff1d0', 2.3);
+      sun.position.set(11, 20, 7);
+      scene.add(sun);
+
+      // Ground: 2 m tiles in the Meadow greens with soft grout lines (canvas texture, 2x2 tiles per repeat).
+      function gridTexture() {
+        const c = document.createElement('canvas');
+        c.width = c.height = 256;
+        const g = c.getContext('2d');
+        const cols = ['#8fd672', '#82cb64'];
+        for (let i = 0; i < 4; i++) {
+          const x = (i % 2) * 128;
+          const y = (i >> 1) * 128;
+          g.fillStyle = cols[(i + (i >> 1)) % 2];
+          g.fillRect(x, y, 128, 128);
+          g.strokeStyle = 'rgba(255,255,255,0.28)';
+          g.lineWidth = 4;
+          g.strokeRect(x + 2, y + 2, 124, 124);
+          g.fillStyle = 'rgba(255,255,255,0.10)';
+          g.fillRect(x + 10, y + 10, 30, 6);
+        }
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        t.repeat.set(30, 30);
+        t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+        return t;
+      }
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), new THREE.MeshLambertMaterial({ map: gridTexture() }));
+      ground.rotation.x = -Math.PI / 2;
+      scene.add(ground);
+
+      // Soft blob shadow shared by everything standing on the ground.
+      const blobTex = (() => {
+        const c = document.createElement('canvas');
+        c.width = c.height = 64;
+        const g = c.getContext('2d');
+        const grd = g.createRadialGradient(32, 32, 4, 32, 32, 31);
+        grd.addColorStop(0, 'rgba(20,40,20,0.55)');
+        grd.addColorStop(1, 'rgba(20,40,20,0)');
+        g.fillStyle = grd;
+        g.fillRect(0, 0, 64, 64);
+        return new THREE.CanvasTexture(c);
+      })();
+      const blobGeo = new THREE.PlaneGeometry(1, 1);
+      const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false });
+      function blob(x, z, size) {
+        const m = new THREE.Mesh(blobGeo, blobMat);
+        m.rotation.x = -Math.PI / 2;
+        m.position.set(x, 0.02, z);
+        m.scale.setScalar(size);
+        scene.add(m);
+        return m;
+      }
+
+      // Props: crates, stone pillars and trees at fixed spots, a hut to the south, a flag far north.
+      const box = new THREE.BoxGeometry(1, 1, 1);
+      const mats = {
+        crate: new THREE.MeshLambertMaterial({ color: '#d99a52' }),
+        stone: new THREE.MeshLambertMaterial({ color: '#a7b0c0' }),
+        pink: new THREE.MeshLambertMaterial({ color: '#ff8fb1' }),
+        teal: new THREE.MeshLambertMaterial({ color: '#4fd1c5' }),
+        trunk: new THREE.MeshLambertMaterial({ color: '#8a5a36' }),
+        leaf: new THREE.MeshLambertMaterial({ color: '#3fae4f', flatShading: true }),
+        roof: new THREE.MeshLambertMaterial({ color: '#e0523f', flatShading: true }),
+        wall: new THREE.MeshLambertMaterial({ color: '#fff3dc' }),
+        pole: new THREE.MeshLambertMaterial({ color: '#ffffff' }),
+      };
+      function prop(mat, x, z, w, h, d, ry = 0) {
+        const m = new THREE.Mesh(box, mats[mat]);
+        m.scale.set(w, h, d);
+        m.position.set(x, h / 2, z);
+        m.rotation.y = ry;
+        scene.add(m);
+        blob(x, z, Math.max(w, d) * 1.7);
+      }
+      [
+        ['crate', -5, 1, 1.4, 1.4, 1.4, 0.3], ['crate', 6, -3, 1.2, 1.2, 1.2, 0.8], ['crate', -8, -9, 1.6, 1.6, 1.6, 0.1],
+        ['stone', 3, -12, 1.2, 3.2, 1.2, 0], ['stone', -3, -12, 1.2, 3.2, 1.2, 0], ['stone', 10, 5, 1.8, 1.1, 1.4, 0.6],
+        ['pink', -11, 4, 2, 1, 2, 0.4], ['teal', 12, -10, 1.5, 2.4, 1.5, 0.2], ['teal', -14, -4, 1, 1.8, 1, 0.9],
+        ['pink', 7, 12, 1.2, 0.8, 1.2, 0.2], ['crate', -2, -20, 2, 2, 2, 0.5], ['stone', 16, -18, 2.4, 1.4, 2, 0.3],
+      ].forEach((p) => prop(...p));
+
+      const trunkGeo = new THREE.CylinderGeometry(0.18, 0.26, 1, 7);
+      const leafGeo = new THREE.IcosahedronGeometry(1.1, 0);
+      function tree(x, z, s = 1) {
+        const t = new THREE.Mesh(trunkGeo, mats.trunk);
+        t.position.set(x, 0.5 * s, z);
+        t.scale.setScalar(s);
+        const l = new THREE.Mesh(leafGeo, mats.leaf);
+        l.position.set(x, 1.7 * s, z);
+        l.scale.setScalar(s);
+        scene.add(t, l);
+        blob(x, z, 2.6 * s);
+      }
+      [[-7, -4, 1], [9, -7, 1.2], [-12, -15, 1.1], [4, -24, 1.3], [14, 1, 0.9], [-16, 10, 1.2], [18, 14, 1]].forEach((t) => tree(...t));
+
+      // Workshop hut to the south (where the player spawns in the real game).
+      prop('wall', -7, 10, 4, 2.2, 3);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(3.3, 1.6, 4), mats.roof);
+      roof.position.set(-7, 3, 10);
+      roof.rotation.y = Math.PI / 4;
+      scene.add(roof);
+      // North flag: shows which way yaw = PI looks.
+      const pole = new THREE.Mesh(box, mats.pole);
+      pole.scale.set(0.2, 6, 0.2);
+      pole.position.set(0, 3, -30);
+      const flag = new THREE.Mesh(box, mats.roof);
+      flag.scale.set(2, 1.2, 0.08);
+      flag.position.set(1.1, 5.3, -30);
+      scene.add(pole, flag);
+
+      // Player stand-in: capsule with a visor on its +Z side so the heading is visible.
+      const player = new THREE.Group();
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.85, 6, 14), new THREE.MeshLambertMaterial({ color: '#3d8bff' }));
+      body.position.y = 0.85;
+      const visor = new THREE.Mesh(box, new THREE.MeshLambertMaterial({ color: '#ffffff' }));
+      visor.scale.set(0.5, 0.18, 0.2);
+      visor.position.set(0, 1.28, 0.36);
+      player.add(body, visor);
+      scene.add(player);
+      const playerBlob = blob(0, 0, 1.3);
+
+      // Tap feedback ring.
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.45, 0.62, 40),
+        new THREE.MeshBasicMaterial({ color: '#ffd34d', transparent: true, depthWrite: false })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.visible = false;
+      scene.add(ring);
+      let ringT = 1;
+
+      // ------------------------------------------------------------ camera + input
+      const cam = new ThirdPersonCamera(camera);
+      const state = { x: 0, z: 6, heading: Math.PI, dest: null };
+      const dbg = { cam, input: null, state, taps: [], events: [], lastTap: null };
+      window.__dbg = dbg;
+      const log = (what) => {
+        dbg.events.push(what);
+        dbg.last = `${what} @ ${(performance.now() / 1000).toFixed(1)}s`;
+      };
+
+      const ray = new THREE.Raycaster();
+      const ndc = new THREE.Vector2();
+      function onTap(x, y) {
+        dbg.taps.push({ x, y });
+        dbg.lastTap = { x: Math.round(x), y: Math.round(y), t: performance.now() };
+        if (cam.mode === 'intro') return cam.skipIntro();
+        const r = canvas.getBoundingClientRect();
+        ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+        ray.setFromCamera(ndc, camera);
+        const hit = ray.intersectObject(ground)[0];
+        if (hit) {
+          state.dest = { x: hit.point.x, z: hit.point.z };
+          ring.position.set(hit.point.x, 0.04, hit.point.z);
+          ring.visible = true;
+          ringT = 0;
+        }
+      }
+      const actions = {
+        onTap,
+        onInteract: () => {
+          log('interact');
+          cam.shake(0.35);
+        },
+        onHome: () => {
+          log('home');
+          state.dest = { x: 0, z: 9.6 };
+        },
+        onPause: () => log('pause'),
+      };
+      const input = new Input(canvas, actions, { sensitivity: 1, invertY: false, ghost: params.get('ghost') === '1' });
+      dbg.input = input;
+
+      $('b-interact').addEventListener('click', actions.onInteract);
+      $('b-home').addEventListener('click', actions.onHome);
+      $('m-intro').addEventListener('click', () => cam.intro({ x: 0, z: 0 }, () => log('intro done')));
+      $('m-victory').addEventListener('click', () => cam.victory(state.x, state.z));
+      $('m-menu').addEventListener('click', () => cam.menuOrbit({ x: 0, z: 0 }));
+      $('m-follow').addEventListener('click', () => cam.reset(state.x, state.z));
+      $('m-shake').addEventListener('click', () => cam.shake(0.7));
+      $('m-align').addEventListener('click', (e) => {
+        cam.autoAlign = !cam.autoAlign;
+        e.currentTarget.classList.toggle('on', cam.autoAlign);
+      });
+
+      function resize() {
+        const w = innerWidth;
+        const h = innerHeight;
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+      addEventListener('resize', resize);
+      resize();
+
+      cam.reset(state.x, state.z);
+      if (params.get('intro') === '1') cam.intro({ x: 0, z: 0 }, () => log('intro done'));
+
+      // ------------------------------------------------------------ loop
+      const mv = { x: 0, z: 0 };
+      const f = (v) => (v >= 0 ? '+' : '') + v.toFixed(2);
+      const deg = (r) => ((((r * 180) / Math.PI) % 360) + 360) % 360;
+      let last = performance.now();
+      function frame(now) {
+        const dt = Math.min(0.1, Math.max(0, (now - last) / 1000));
+        last = now;
+
+        const s = input.stick;
+        let moving = 0;
+        if (cam.mode === 'follow') {
+          cam.moveFromStick(s.x, s.y, mv);
+          if (s.mag > 0) {
+            state.dest = null;
+            state.x += mv.x * SPEED * dt;
+            state.z += mv.z * SPEED * dt;
+            state.heading = Math.atan2(mv.x, mv.z);
+            moving = s.mag;
+          } else if (state.dest) {
+            const dx = state.dest.x - state.x;
+            const dz = state.dest.z - state.z;
+            const d = Math.hypot(dx, dz);
+            const step = SPEED * dt;
+            if (d <= step) state.dest = null;
+            const k = Math.min(1, step / (d || 1));
+            state.x += dx * k;
+            state.z += dz * k;
+            if (d > 0.01) state.heading = Math.atan2(dx, dz);
+            moving = 1;
+          }
+          state.x = Math.max(-FIELD, Math.min(FIELD, state.x));
+          state.z = Math.max(-FIELD, Math.min(FIELD, state.z));
+        }
+        const look = input.consumeLook();
+        cam.orbit(look.dx, look.dy);
+        cam.zoom(input.consumeZoom());
+        cam.follow(state.x, state.z, state.heading, moving);
+        cam.update(dt);
+
+        // Capsule: position, eased turn toward the heading, a little run bob.
+        player.position.set(state.x, moving ? Math.abs(Math.sin(now / 90)) * 0.08 : 0, state.z);
+        const dr = Math.atan2(Math.sin(state.heading - player.rotation.y), Math.cos(state.heading - player.rotation.y));
+        player.rotation.y += dr * (1 - Math.exp(-14 * dt));
+        playerBlob.position.set(state.x, 0.02, state.z);
+        if (ring.visible) {
+          ringT += dt / 0.6;
+          ring.scale.setScalar(1 + ringT * 1.2);
+          ring.material.opacity = Math.max(0, 1 - ringT);
+          if (ringT >= 1) ring.visible = false;
+        }
+
+        renderer.render(scene, camera);
+
+        const tap = dbg.lastTap ? `(${dbg.lastTap.x}, ${dbg.lastTap.y}) ${((now - dbg.lastTap.t) / 1000).toFixed(1)}s ago` : '-';
+        $('dbg').textContent =
+          `stick  x ${f(s.x)}  y ${f(s.y)}  mag ${s.mag.toFixed(2)}\n` +
+          `yaw    ${deg(cam.yaw).toFixed(1)}°  pitch ${deg(cam.pitch).toFixed(1)}°  dist ${cam.distance.toFixed(1)}\n` +
+          `mode   ${cam.mode}  ·  ${input.lastDevice}${input.joystickActive ? '  ·  joystick' : ''}${input.looking ? '  ·  look' : ''}\n` +
+          `pos    x ${state.x.toFixed(1)}  z ${state.z.toFixed(1)}\n` +
+          `tap    ${tap}  (${dbg.taps.length})\n` +
+          `event  ${dbg.last || '-'}`;
+        window.__ready = true;
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>OUTCRAFT UI harness</title>
+    <link rel="icon" href="data:," />
+    <script type="importmap">{"imports":{"three":"../vendor/three/three.module.min.js","three/addons/":"../vendor/three/addons/"}}</script>
+    <link rel="stylesheet" href="../style.css" />
+    <style>
+      /* Harness-only: a small screen switcher (hidden with ?clean=1, e.g. for screenshots). */
+      .dev-nav {
+        position: fixed;
+        left: 4px;
+        bottom: 4px;
+        z-index: 100;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 3px;
+        max-width: 60vw;
+        opacity: 0.25;
+        font: 11px system-ui, sans-serif;
+      }
+      .dev-nav:hover {
+        opacity: 1;
+      }
+      .dev-nav a {
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: #000;
+        color: #fff;
+        text-decoration: none;
+      }
+    </style>
+  </head>
+  <body>
+    <script type="module">
+      // Dev harness for src/ui/screens.js and src/ui/hud.js: loads index.html's markup (without its
+      // script), renders one screen from mock view models, and paints a fake island behind the HUD.
+      //   dev/ui.html?screen=title|map|popup|win|fail|shop|boosters|hearts|daily|achievements|settings|
+      //                      hud|vs|results|codex|rivals|how|about|pause|confirm|loading|nogl
+      import { RIVALS, ITEMS } from '../src/data.js';
+      import { HABITS, HABIT_IDS } from '../src/model.js';
+      import { SKINS, RARITY } from '../src/skins.js';
+      import { THEMES } from '../src/3d/themes.js';
+      import { generateIsland } from '../src/world.js';
+
+      const params = new URLSearchParams(location.search);
+      const which = params.get('screen') || 'title';
+
+      // ------------------------------------------------------------ markup from index.html
+      const html = await (await fetch('../index.html')).text();
+      const doc = new DOMParser().parseFromString(html, 'text/html');
+      for (const n of [...doc.body.childNodes]) {
+        if (n.nodeType === 1 && (n.tagName === 'SCRIPT' || n.tagName === 'NOSCRIPT')) continue;
+        document.body.appendChild(document.importNode(n, true));
+      }
+      const S = await import('../src/ui/screens.js');
+      const { HUD } = await import('../src/ui/hud.js');
+      S.initScreens({ sound: (name, ...a) => console.log('[sound]', name, ...a) });
+
+      // ------------------------------------------------------------ mock portraits (canvas)
+      function portrait({ bg = '#3d7bff', face = '#f2c29b', hair = '#3b2a20', accent = '#ffc83d', look = 'kid', hat = null }, size = 128) {
+        const c = document.createElement('canvas');
+        c.width = c.height = size;
+        const g = c.getContext('2d');
+        const s = size / 128;
+        g.scale(s, s);
+        const grd = g.createRadialGradient(64, 50, 10, 64, 64, 90);
+        grd.addColorStop(0, '#ffffff');
+        grd.addColorStop(0.35, bg);
+        grd.addColorStop(1, shade(bg, -40));
+        g.fillStyle = grd;
+        g.fillRect(0, 0, 128, 128);
+        // body
+        g.fillStyle = look === 'kid' ? bg : shade(bg, -10);
+        g.beginPath();
+        g.ellipse(64, 138, 46, 40, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = shade(bg, 30);
+        g.beginPath();
+        g.ellipse(64, 124, 30, 14, 0, 0, Math.PI * 2);
+        g.fill();
+        const head = look === 'kid' ? face : look === 'mirror' ? '#bfeee8' : bg;
+        // ears / crest / sprout / beak
+        if (look === 'ears') {
+          g.fillStyle = head;
+          for (const d of [-1, 1]) {
+            g.beginPath();
+            g.moveTo(64 + d * 16, 36);
+            g.lineTo(64 + d * 38, 8);
+            g.lineTo(64 + d * 40, 44);
+            g.fill();
+          }
+        }
+        if (look === 'crest') {
+          g.fillStyle = shade(bg, -30);
+          for (const [dx, h] of [[-10, 26], [0, 34], [10, 26]]) {
+            g.beginPath();
+            g.ellipse(64 + dx, 30 - h / 3, 6, h / 2, dx / 30, 0, Math.PI * 2);
+            g.fill();
+          }
+        }
+        if (look === 'sprout') {
+          g.strokeStyle = '#3a9c44';
+          g.lineWidth = 4;
+          g.beginPath();
+          g.moveTo(64, 30);
+          g.quadraticCurveTo(66, 16, 62, 8);
+          g.stroke();
+          g.fillStyle = '#5fd06a';
+          g.beginPath();
+          g.ellipse(52, 12, 12, 6, -0.5, 0, Math.PI * 2);
+          g.ellipse(74, 12, 12, 6, 0.5, 0, Math.PI * 2);
+          g.fill();
+        }
+        // head
+        g.fillStyle = head;
+        g.beginPath();
+        g.ellipse(64, 62, 38, 36, 0, 0, Math.PI * 2);
+        g.fill();
+        g.lineWidth = 3;
+        g.strokeStyle = 'rgba(40,20,60,.35)';
+        g.stroke();
+        if (look === 'mirror') {
+          g.fillStyle = 'rgba(255,255,255,.7)';
+          g.beginPath();
+          g.ellipse(50, 48, 12, 7, -0.6, 0, Math.PI * 2);
+          g.fill();
+        }
+        if (look === 'kid') {
+          g.fillStyle = hair;
+          g.beginPath();
+          g.ellipse(64, 40, 38, 20, 0, Math.PI, 0);
+          g.fill();
+          if (hat) {
+            g.fillStyle = accent;
+            g.beginPath();
+            g.ellipse(64, 32, 40, 16, 0, Math.PI, 0);
+            g.fill();
+            g.fillRect(64, 28, 46, 7);
+          }
+        }
+        // eyes
+        for (const d of [-1, 1]) {
+          g.fillStyle = '#fff';
+          g.beginPath();
+          g.ellipse(64 + d * 14, 64, 9, 11, 0, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = '#2a1f35';
+          g.beginPath();
+          g.ellipse(64 + d * 14 + 1, 66, 5, 7, 0, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = '#fff';
+          g.beginPath();
+          g.arc(64 + d * 14 + 3, 62, 2, 0, Math.PI * 2);
+          g.fill();
+        }
+        if (look === 'beak') {
+          g.fillStyle = '#ffb13d';
+          g.beginPath();
+          g.moveTo(56, 78);
+          g.lineTo(72, 78);
+          g.lineTo(64, 90);
+          g.fill();
+        } else {
+          g.strokeStyle = '#6b2a3a';
+          g.lineWidth = 3;
+          g.beginPath();
+          g.arc(64, 80, 7, 0.2, Math.PI - 0.2);
+          g.stroke();
+        }
+        g.fillStyle = 'rgba(255,110,130,.35)';
+        g.beginPath();
+        g.ellipse(40, 80, 7, 4, 0, 0, Math.PI * 2);
+        g.ellipse(88, 80, 7, 4, 0, 0, Math.PI * 2);
+        g.fill();
+        return c.toDataURL();
+      }
+      function shade(hex, amt) {
+        const n = parseInt(hex.slice(1), 16);
+        const f = (v) => Math.max(0, Math.min(255, v + amt));
+        return `rgb(${f(n >> 16)},${f((n >> 8) & 255)},${f(n & 255)})`;
+      }
+      const RP = Object.fromEntries(RIVALS.map((r) => [r.id, portrait({ bg: r.color, look: r.look })]));
+      const player = { portrait: portrait({ bg: '#3d7bff', hat: true }), color: '#3d7bff' };
+      const skinPortrait = (s) => portrait({ bg: s.colors.body, face: s.colors.skin, hair: s.colors.hair, accent: s.colors.accent, hat: s.hat !== 'none' });
+
+      // ------------------------------------------------------------ fake 3D background
+      function paintBackground(kind) {
+        const c = document.getElementById('game');
+        const W = innerWidth;
+        const H = innerHeight;
+        c.width = W;
+        c.height = H;
+        const g = c.getContext('2d');
+        const sky = g.createLinearGradient(0, 0, 0, H);
+        sky.addColorStop(0, '#5fb8ff');
+        sky.addColorStop(0.45, '#bfe6ff');
+        sky.addColorStop(0.46, '#2f9fd8');
+        sky.addColorStop(1, '#1c6aa8');
+        g.fillStyle = sky;
+        g.fillRect(0, 0, W, H);
+        const cx = W / 2;
+        const cy = H * 0.6;
+        const rx = Math.min(W * 0.46, 420);
+        const ry = Math.min(H * 0.3, 260);
+        g.fillStyle = '#7a5a3c';
+        g.beginPath();
+        g.ellipse(cx, cy + 22, rx, ry, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = '#f1d9a0';
+        g.beginPath();
+        g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+        g.fill();
+        g.fillStyle = '#8fd672';
+        g.beginPath();
+        g.ellipse(cx, cy - 6, rx * 0.9, ry * 0.86, 0, 0, Math.PI * 2);
+        g.fill();
+        const spots = [];
+        for (let i = 0; i < 16; i++) {
+          const a = i * 2.4;
+          const r = 0.25 + ((i * 37) % 60) / 100;
+          const x = cx + Math.cos(a) * rx * 0.75 * r;
+          const y = cy - 6 + Math.sin(a) * ry * 0.7 * r;
+          const col = ['#3fa84a', '#9aa3b2', '#6f5b53', '#e8c26a', '#78b04a', '#35b9e8'][i % 6];
+          g.fillStyle = 'rgba(0,0,0,.15)';
+          g.beginPath();
+          g.ellipse(x, y + 10, 16, 6, 0, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = col;
+          g.beginPath();
+          g.arc(x, y - 4, 15, 0, Math.PI * 2);
+          g.fill();
+          spots.push({ x, y: y - 22 });
+        }
+        g.fillStyle = '#b5773f';
+        g.fillRect(cx - 40, cy + ry * 0.45, 80, 40);
+        g.fillStyle = '#d9483b';
+        g.beginPath();
+        g.moveTo(cx - 52, cy + ry * 0.45);
+        g.lineTo(cx, cy + ry * 0.45 - 34);
+        g.lineTo(cx + 52, cy + ry * 0.45);
+        g.fill();
+        return spots;
+      }
+
+      // ------------------------------------------------------------ mock view models
+      const worlds = THEMES.map((t, i) => ({ name: t.name, themeId: t.id, stars: i === 0 ? 26 : i === 1 ? 19 : i === 2 ? 4 : 0, maxStars: 30 }));
+      const CURRENT = +(params.get('level') || 23);
+      const levels = Array.from({ length: 60 }, (_, i) => {
+        const id = i + 1;
+        const boss = id % 10 === 0;
+        const rival = RIVALS[Math.min(4, Math.floor(i / 12))];
+        return { id, world: Math.floor(i / 10), boss, state: id < CURRENT ? 'done' : id === CURRENT ? 'current' : 'locked', stars: id < CURRENT ? 1 + ((id * 7) % 3) : 0, rivalPortrait: boss ? RP[rival.id] : null, rivalColor: rival.color };
+      });
+      const boosters = [
+        { id: 'boots', name: 'Swift Boots', desc: 'Run 15% faster this level.', icon: 'boots', count: 2, price: { coins: 150 }, canAfford: true, pack: 3 },
+        { id: 'backpack', name: 'Big Pack', desc: 'Your bag holds one more.', icon: 'backpack', count: 1, price: { coins: 200 }, canAfford: true, pack: 3 },
+        { id: 'headstart', name: 'Head Start', desc: 'The rival waits 2 s at the start of every order.', icon: 'headstart', count: 0, price: { coins: 250 }, canAfford: true, pack: 3 },
+        { id: 'fog', name: 'Fog', desc: 'The rival cannot read you for the first 2 orders.', icon: 'fog', count: 0, price: { coins: 400 }, canAfford: false, pack: 2 },
+      ];
+      const fox = RIVALS[2];
+      const notebook = {
+        rivalName: 'FOX',
+        predicting: true,
+        predN: 11,
+        acc: 0.64,
+        chance: 0.41,
+        rows: HABIT_IDS.map((id, i) => ({ glyph: HABITS[id].glyph, name: HABITS[id].name, weight: [100, 62, 48, 30, 12][i], used: i < 4 })),
+      };
+      const topbar = { coins: 1250, gems: 35, hearts: 4, heartsMax: 5, heartsText: '12:48' };
+      const noop = (name) => (...a) => console.log('[cb]', name, ...a);
+      const cbs = new Proxy({}, { get: (_, k) => noop(k) });
+
+      let hud = null;
+      function show() {
+        S.renderTopBar(topbar, cbs);
+        switch (which) {
+          case 'loading':
+            S.showScreen('loading');
+            S.renderLoading({ progress: 0.62, text: 'Planting trees…' });
+            break;
+          case 'nogl':
+            S.showNoWebGL();
+            break;
+          case 'title':
+            paintBackground();
+            S.renderTitle(
+              {
+                level: CURRENT,
+                levelName: 'Icicle Inlet',
+                dailySub: '#4 · Rush Hour',
+                quickSub: 'vs FOX · The Copycat',
+                dailyReward: true,
+                achievements: 2,
+                codex: '7/12',
+                dossier: params.get('dossier') === '0' ? null : { greet: 'Back already? It has been 2 days. We missed your habits.', lines: ['You usually walk to the nearest one: 78% of trips, when chance says 41%.'], notebook: 142, nextRival: 'RAVEN' },
+              },
+              cbs,
+            );
+            S.showScreen('title');
+            break;
+          case 'map':
+            S.renderMap({ worlds, levels, current: CURRENT, playerPortrait: player.portrait, stars: 49, maxStars: 180 }, cbs);
+            S.showScreen('map');
+            break;
+          case 'popup':
+          case 'win':
+          case 'fail':
+            S.renderMap({ worlds, levels, current: CURRENT, playerPortrait: player.portrait, stars: 49, maxStars: 180 }, cbs);
+            S.showScreen('map');
+            if (which === 'popup')
+              S.renderLevelPopup(
+                {
+                  id: CURRENT,
+                  name: 'Icicle Inlet',
+                  worldName: 'Frost Fjord',
+                  themeId: 'frost',
+                  rival: { name: fox.name, title: fox.title, color: fox.color, portrait: RP.fox },
+                  player,
+                  goal: 'Lead when the 90 s clock runs out, or win 3 orders first.',
+                  twist: { name: 'Rush Hour', desc: 'Everyone moves 15% faster.' },
+                  note: null,
+                  timeLimit: 90,
+                  thresholds: [0, 3700, 4200],
+                  stars: 1,
+                  best: 2950,
+                  boosters,
+                  selected: ['boots'],
+                  hearts: params.get('hearts') === '0' ? 0 : 4,
+                  heartsText: '12:48',
+                },
+                cbs,
+              );
+            else if (which === 'win')
+              S.renderLevelResult({ passed: true, id: CURRENT, name: 'Icicle Inlet', stars: 3, score: 4380, best: 4380, newBest: true, firstClear: true, coins: 45, gems: 2, hasNext: true, rival: { name: 'FOX', color: fox.color, portrait: RP.fox }, playerPortrait: player.portrait, matchStars: { player: 3, rival: 1 }, quote: fox.lose, notebook }, cbs);
+            else S.renderLevelResult({ passed: false, id: CURRENT, name: 'Icicle Inlet', stars: 0, score: 1840, rival: { name: 'FOX', color: fox.color, portrait: RP.fox }, playerPortrait: player.portrait, matchStars: { player: 1, rival: 3 }, reason: 'FOX won 3–1', tip: "When FOX's line turns red, it is heading for your target. Switch to another one.", heartLost: true, hearts: 3, heartsText: '19:59', quote: fox.win, notebook }, cbs);
+            break;
+          case 'shop':
+          case 'boosters':
+          case 'hearts': {
+            const owned = new Set(['explorer', 'scout', 'pirate']);
+            const skins = SKINS.map((s) => ({
+              id: s.id,
+              name: s.name,
+              desc: s.desc,
+              rarity: s.rarity,
+              rarityName: RARITY[s.rarity].name,
+              rarityColor: RARITY[s.rarity].color,
+              portrait: skinPortrait(s),
+              price: s.price,
+              sourceText: s.source === 'daily' ? 'Day 7 daily reward' : s.source.startsWith('achievement') ? 'Beat MIMIC' : '',
+              owned: owned.has(s.id),
+              equipped: s.id === 'pirate',
+              canAfford: s.price ? (s.price.coins ? s.price.coins <= 1250 : s.price.gems <= 35) : false,
+            }));
+            S.renderShop(
+              {
+                tab: which === 'shop' ? 'skins' : which,
+                selectedSkin: params.get('skin') || 'ninja',
+                skins,
+                boosters,
+                hearts: { n: 4, max: 5, nextText: '12:48', refillGems: 12, canRefill: true },
+                exchange: [
+                  { id: 'coins-s', gems: 10, coins: 500, canAfford: true, label: 'Pouch' },
+                  { id: 'coins-m', gems: 25, coins: 1400, canAfford: true, label: 'Sack' },
+                  { id: 'coins-l', gems: 60, coins: 3600, canAfford: false, label: 'Chest' },
+                ],
+              },
+              cbs,
+            );
+            S.showScreen('shop');
+            break;
+          }
+          case 'daily':
+            paintBackground();
+            S.renderTitle({ level: CURRENT, dailySub: '#4 · Rush Hour', quickSub: 'vs FOX', dossier: null }, cbs);
+            S.showScreen('title');
+            S.renderDailyReward(
+              {
+                day: 4,
+                canClaim: params.get('claimed') !== '1',
+                nextText: '9 h 12 min',
+                rewards: [
+                  { day: 1, label: '100', kind: 'coins', claimed: true },
+                  { day: 2, label: 'Boots', kind: 'booster', icon: 'boots', claimed: true },
+                  { day: 3, label: '150', kind: 'coins', claimed: true },
+                  { day: 4, label: '5', kind: 'gems', today: true },
+                  { day: 5, label: 'Big Pack', kind: 'booster', icon: 'backpack' },
+                  { day: 6, label: '300', kind: 'coins' },
+                  { day: 7, label: 'Festival skin', kind: 'skin' },
+                ],
+              },
+              cbs,
+            );
+            break;
+          case 'achievements':
+            S.renderAchievements(
+              {
+                list: [
+                  { id: 'first', name: 'First Steps', desc: 'Win your first Adventure level.', icon: 'flag', cur: 1, target: 1, done: true, claimed: true, reward: { label: '100', kind: 'coins' } },
+                  { id: 'stars30', name: 'Star Collector', desc: 'Earn 30 stars on the map.', icon: 'star', cur: 30, target: 30, done: true, claimed: false, reward: { label: '10', kind: 'gems' } },
+                  { id: 'fake', name: 'Mind Games', desc: 'Fake out a rival 10 times.', icon: 'eye', cur: 6, target: 10, done: false, claimed: false, reward: { label: '250', kind: 'coins' } },
+                  { id: 'outread', name: 'Beat Them There', desc: 'Get to a contested resource first 25 times.', icon: 'boots', cur: 11, target: 25, done: false, claimed: false, reward: { label: '300', kind: 'coins' } },
+                  { id: 'world2', name: 'Dune Walker', desc: 'Clear every level of Sunny Dunes.', icon: 'trophy', cur: 10, target: 10, done: true, claimed: false, reward: { label: '15', kind: 'gems' } },
+                  { id: 'flawless', name: 'Flawless', desc: 'Win 5 matches without losing an order.', icon: 'crown', cur: 2, target: 5, done: false, claimed: false, reward: { label: '20', kind: 'gems' } },
+                  { id: 'mimic', name: 'Mirror, Mirror', desc: 'Beat MIMIC in the Adventure.', icon: 'crown', cur: 0, target: 1, done: false, claimed: false, reward: { label: 'Royal skin', kind: 'skin' } },
+                ],
+              },
+              cbs,
+            );
+            S.showScreen('achievements');
+            break;
+          case 'settings':
+            S.renderSettings({ quality: 'medium', sound: true, music: false, sensitivity: 1.3, invertY: false, autoReturn: true, glass: false, info: 'OUTCRAFT 3D · v2.0 · 58 fps' }, cbs);
+            S.showScreen('settings');
+            break;
+          case 'codex':
+            S.renderCodex(
+              {
+                items: ITEMS.map((it, i) => ({ id: it.id, name: it.name, tier: it.tier, got: i % 3 !== 2 && i < 10, count: 1 + (i % 4), flavor: it.flavor })),
+                tells: HABIT_IDS.map((id, i) => ({ glyph: HABITS[id].glyph, name: HABITS[id].name, blurb: HABITS[id].blurb, status: i === 0 ? 'detected' : i === 1 ? 'broken' : 'locked', statusText: i === 0 ? 'ACTIVE · read 71% vs 41% chance' : i === 1 ? 'BROKEN · 2026-09-25. It can come back.' : '' })),
+                meta: { matches: 31, wins: 19, snatched: 22, outread: 17, notebook: 142 },
+              },
+              cbs,
+            );
+            S.showScreen('codex');
+            break;
+          case 'rivals':
+            paintBackground();
+            S.renderRivals({ rivals: RIVALS.map((r, i) => ({ name: r.name, title: r.title, blurb: r.blurb, color: r.color, portrait: RP[r.id], locked: i > 3, beaten: i < 2, next: i === 3 })), selected: 2 }, cbs);
+            S.showScreen('rivals');
+            break;
+          case 'results':
+            paintBackground();
+            S.renderResults(
+              {
+                win: params.get('lose') !== '1',
+                rival: { name: fox.name, color: fox.color, portrait: RP.fox },
+                playerPortrait: player.portrait,
+                stars: params.get('lose') === '1' ? { player: 1, rival: 3 } : { player: 3, rival: 2 },
+                items: [
+                  { id: 'torch', name: 'Torch', won: true, isNew: true },
+                  { id: 'lantern', name: 'Lantern', won: false },
+                  { id: 'anvil', name: 'Anvil', won: true },
+                  { id: 'compass', name: 'Compass', won: false },
+                  { id: 'rod', name: 'Fishing Rod', won: true },
+                ],
+                stats: { snatched: 3, outread: 4, fooled: 1, seconds: 83 },
+                tip: null,
+                unlocked: { name: 'RAVEN', color: RIVALS[3].color, title: RIVALS[3].title },
+                tells: [{ type: 'detected', glyph: HABITS.beeline.glyph, name: HABITS.beeline.name, blurb: HABITS.beeline.blurb, acc: 0.71, chance: 0.41 }],
+                notebook,
+                quote: { text: fox.lose, sub: 'What the rivals wrote down: You usually walk to the nearest one.' },
+                daily: null,
+                coins: 20,
+                canNext: true,
+              },
+              cbs,
+            );
+            S.showScreen('results');
+            break;
+          case 'how':
+            paintBackground();
+            S.renderHow({}, cbs);
+            S.showScreen('how');
+            break;
+          case 'about':
+            paintBackground();
+            S.renderAbout({}, cbs);
+            S.showScreen('about');
+            break;
+          case 'confirm':
+            paintBackground();
+            S.showScreen('settings');
+            S.renderSettings({ quality: 'auto', sound: true, music: true, sensitivity: 1, invertY: false, autoReturn: false, glass: false }, cbs);
+            S.confirmDialog({ title: 'Reset everything?', text: 'Your coins, gems, skins, stars and what the rivals know about you will be erased. This cannot be undone.', ok: 'RESET', danger: true });
+            break;
+          case 'pause':
+          case 'hud':
+          case 'vs': {
+            S.showScreen(null);
+            const spots = paintBackground();
+            hud = new HUD(document.getElementById('hud'), cbs);
+            hud.show(true);
+            hud.setup({ rival: { name: fox.name, color: fox.color, portrait: RP.fox, title: fox.title }, player, starsToWin: 3, thresholds: params.get('meter') === '0' ? null : [0, 3700, 4200], timeLimit: 90, bagSize: 3 });
+            hud.setOrder({ item: params.get('item') || 'lantern', index: 1, total: 5, made: [true, false] });
+            hud.setStars(1, 1);
+            hud.setScore(2450);
+            hud.setTimer(67);
+            hud.setBag(['sand', 'wood'], 3);
+            hud.setHint('Still need: Ore, Wood');
+            hud.setInteract('gather', 'ore');
+            const world = generateIsland(1103);
+            hud.setMinimapWorld(world);
+            const pn = world.nodes;
+            hud.updateMinimap({ nodes: pn, time: 0, player: { x: 2.4, y: 9.2, heading: Math.PI }, rival: { x: 6, y: 7 }, rivalTarget: 3, playerTarget: 3, need: new Set(['ore', 'wood']) }, true);
+            hud.beginLabels();
+            hud.label('contest', spots[3].x, spots[3].y, 'FOX FIRST', 'pill', '#ff4d5e');
+            hud.label('you-first', spots[7].x, spots[7].y, 'YOU FIRST', 'pill', '#3ec22b');
+            hud.label('say-rival', spots[5].x, spots[5].y - 10, 'Same route again?', 'bubble', fox.color);
+            hud.glassLabel('g1', spots[1].x, spots[1].y, 0.63);
+            hud.glassLabel('g2', spots[9].x, spots[9].y, 0.28);
+            hud.glassLabel('g3', spots[11].x, spots[11].y, 0.09);
+            hud.endLabels();
+            if (which === 'hud') {
+              hud.pop('+60', spots[2].x, spots[2].y, 'score', 3000);
+              hud.pop('SNATCHED!', spots[4].x, spots[4].y - 20, 'bad', 3000);
+              if (params.get('caption') !== '0') hud.caption('CRAFTED!', { sub: 'Glass delivered · +1 star', dur: 4000 });
+              hud.toast('FOX predicted you. You walk to the nearest one, 7 of 9 trips. Try a farther one.', { kind: 'bad', dur: 5000 });
+              if (params.get('pointer') === 'home') hud.pointer('home', 'CRAFT');
+              else hud.pointer({ x: spots[6].x, y: spots[6].y, label: 'TAP' });
+            }
+            if (which === 'vs') hud.vs({ player, rival: { name: fox.name, color: fox.color, portrait: RP.fox, title: fox.title }, title: `LEVEL ${CURRENT} · ICICLE INLET`, goal: 'Lead when the 90 s clock runs out, or win 3 orders first.', sub: '142 of your moves in its notebook', dur: 60000 });
+            if (which === 'pause') S.renderPause({ title: `Level ${CURRENT} · Icicle Inlet`, glass: true, canRestart: true, quitText: 'QUIT (-1 heart)' }, cbs);
+            break;
+          }
+          default:
+            S.showScreen('title');
+        }
+      }
+      show();
+      window.__S = S;
+      // Headless screenshots: CSS/WAAPI animations started after load can stay pending until the next
+      // capture, so fast-forward them. mid = freeze each one-shot animation half way (to see floaters).
+      window.__settle = (ms = 0, mid = false) =>
+        new Promise((r) =>
+          setTimeout(() => {
+            for (const a of document.getAnimations()) {
+              try {
+                const t = a.effect.getComputedTiming();
+                if (t.endTime === Infinity) continue;
+                if (mid && !(a instanceof CSSAnimation) && !(a instanceof CSSTransition)) {
+                  a.currentTime = t.endTime * 0.35;
+                  a.pause();
+                } else a.finish();
+              } catch {}
+            }
+            r('settled');
+          }, ms),
+        );
+      window.__hud = () => hud;
+
+      if (params.get('clean') !== '1') {
+        const nav = document.createElement('nav');
+        nav.className = 'dev-nav';
+        nav.innerHTML = 'title map popup win fail shop boosters hearts daily achievements settings hud vs results codex rivals how about pause confirm loading nogl'
+          .split(' ')
+          .map((s) => `<a href="?screen=${s}">${s}</a>`)
+          .join('');
+        document.body.appendChild(nav);
+      }
+      requestAnimationFrame(() => requestAnimationFrame(() => (window.__ready = true)));
+    </script>
+  </body>
+</html>

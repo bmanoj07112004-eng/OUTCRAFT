@@ -3,6 +3,7 @@
 let ctx = null;
 let master = null;
 let enabled = true;
+let musicOn = true;
 let noiseBuf = null;
 
 export function setSound(on) {
@@ -114,6 +115,44 @@ export const sfx = {
   ui() {
     tone({ f: 880, type: 'triangle', dur: 0.05, vol: 0.07 });
   },
+  // ---- 3D edition: menus, shop and level results
+  coin() {
+    tone({ f: 1319, type: 'square', dur: 0.05, vol: 0.05 });
+    tone({ f: 1976, type: 'square', dur: 0.12, vol: 0.05, at: 0.05 });
+  },
+  buy() {
+    noise({ dur: 0.08, vol: 0.08, freq: 4000, type: 'bandpass' });
+    [784, 988, 1319].forEach((f, i) => tone({ f, type: 'triangle', dur: 0.14, vol: 0.12, at: 0.04 + i * 0.06 }));
+  },
+  // i = 0, 1, 2: each star rings a step higher.
+  star(i = 0) {
+    const f = note(784, [0, 4, 7][Math.max(0, Math.min(2, i))] + 12 * Math.floor(i / 3));
+    tone({ f, type: 'triangle', dur: 0.3, vol: 0.16 });
+    tone({ f: note(f, 12), type: 'sine', dur: 0.4, vol: 0.07, at: 0.03 });
+    noise({ dur: 0.25, vol: 0.05, freq: 7000, type: 'highpass', at: 0.02 });
+  },
+  levelComplete() {
+    [523, 659, 784, 1047, 1319].forEach((f, i) => tone({ f, type: 'triangle', dur: 0.24, vol: 0.14, at: i * 0.09 }));
+    [1047, 1319, 1568].forEach((f) => tone({ f, type: 'sine', dur: 0.8, vol: 0.05, at: 0.5 }));
+  },
+  fail() {
+    [392, 349, 311, 262].forEach((f, i) => tone({ f, f2: f * 0.97, type: 'triangle', dur: 0.3, vol: 0.12, at: i * 0.18 }));
+  },
+  heart() {
+    tone({ f: 220, f2: 110, type: 'sine', dur: 0.25, vol: 0.2 });
+    tone({ f: 660, f2: 330, type: 'triangle', dur: 0.3, vol: 0.06, at: 0.05 });
+  },
+  whoosh() {
+    noise({ dur: 0.28, vol: 0.09, freq: 900, type: 'bandpass', q: 0.9 });
+    noise({ dur: 0.2, vol: 0.05, freq: 2400, type: 'bandpass', q: 1.2, at: 0.06 });
+  },
+  pop() {
+    tone({ f: 520, f2: 1040, type: 'sine', dur: 0.08, vol: 0.12 });
+  },
+  error() {
+    tone({ f: 196, type: 'square', dur: 0.1, vol: 0.06 });
+    tone({ f: 165, type: 'square', dur: 0.16, vol: 0.06, at: 0.1 });
+  },
 };
 
 // ---------------------------------------------------------------- music
@@ -174,11 +213,11 @@ function scheduleStep(step, t) {
 export function startMusic() {
   if (!ctx || music) return;
   musicGain = ctx.createGain();
-  musicGain.gain.value = 0.9;
+  musicGain.gain.value = musicOn ? 0.9 : 0;
   musicGain.connect(master);
   music = { next: ctx.currentTime + 0.15, step: 0 };
   music.timer = setInterval(() => {
-    if (!ctx || ctx.state !== 'running') return;
+    if (!ctx || ctx.state !== 'running' || !musicOn) return;
     // After a background stall, skip ahead instead of firing a backlog of notes at once.
     if (music.next < ctx.currentTime - 0.1) music.next = ctx.currentTime + 0.05;
     while (music.next < ctx.currentTime + 0.35) {
@@ -187,6 +226,13 @@ export function startMusic() {
       music.step++;
     }
   }, 90);
+}
+
+// Music on/off independently of sound effects (the loop keeps its place and resumes on the next bar).
+export function setMusic(on) {
+  musicOn = !!on;
+  if (musicGain) musicGain.gain.value = musicOn ? 0.9 : 0;
+  if (music && musicOn && ctx) music.next = Math.max(music.next, ctx.currentTime + 0.05);
 }
 
 export function setIntensity(v) {
