@@ -2,13 +2,16 @@
 import assert from 'node:assert/strict';
 import { LEVELS, WORLDS, TWISTS, LEVELS_PER_WORLD, MAX_STARS, levelById, worldOf, levelPassed, starsFor, matchConfig } from '../src/levels.js';
 import * as eco from '../src/economy.js';
-import { fresh, load, save, migrate, recordMatch, codexCount } from '../src/storage.js';
+import * as store from '../src/storage.js';
+import { fresh, load, save, migrate, recordMatch, codexCount, dexCounts, todaysDaily } from '../src/storage.js';
+import * as classic from '../classic/src/storage.js';
 import { Match } from '../src/match.js';
 import { PlayerModel, HABIT_IDS } from '../src/model.js';
 import { RIVALS, ITEMS, ITEM_BY_ID, STARS_TO_WIN, SCORE, COMPONENTS } from '../src/data.js';
 import { THEMES } from '../src/3d/themes.js';
 import { SKINS, SKIN_BY_ID } from '../src/skins.js';
 import { idx } from '../src/world.js';
+import { dateKey, daysBetween } from '../src/rng.js';
 
 let passed = 0;
 const test = (name, fn) => {
@@ -292,7 +295,8 @@ test('shop: booster singles and packs, heart refill, gems -> coins exchange', ()
   assert.equal(s.wallet.coins, c - pack.price.coins);
   for (const id of eco.BOOSTER_IDS) {
     const b = eco.BOOSTERS[id];
-    assert.ok(b.price.coins >= 150 && b.price.coins <= 300 && b.icon && b.name && b.desc && Object.keys(b.options).length);
+    assert.ok(b.price.coins >= 60 && b.price.coins <= 120 && b.icon && b.name && b.desc && Object.keys(b.options).length);
+    assert.equal(eco.SHOP_BY_ID[`${id}-pack`].price.coins, b.price.coins * 2.5, 'a pack of 3 costs 2.5 singles');
   }
   assert.deepEqual(eco.buy(s, 'hearts', T0), { ok: false, reason: 'full' });
   eco.loseHeart(s, T0);
@@ -387,7 +391,7 @@ test('grantLevelResult: first clear, replay, improving stars, unlocking, failing
 test('recordQuickRace: small capped coin reward per local day, counters for every match', () => {
   const s = fresh();
   const c0 = s.wallet.coins;
-  assert.deepEqual(eco.recordQuickRace(s, summary({ win: false, fooled: 2, outread: 3 }), { now: T0 }), { coins: 0, capped: false });
+  assert.deepEqual(eco.recordQuickRace(s, summary({ win: false, fooled: 2, outread: 3 }), { now: T0 }), { coins: 0, capped: false, paidToday: 0, cap: eco.QUICK_PAID_PER_DAY });
   assert.equal(s.counters.fakeOuts, 2);
   assert.equal(s.counters.outreads, 3);
   let paid = 0;
@@ -478,6 +482,7 @@ test('achievements: progress, claim exactly once, rewards (Royal skin for beatin
 
   // Beat MIMIC in the Adventure -> the Royal skin.
   const mimic = LEVELS.find((l) => l.rival === 'mimic');
+  s.adventure.unlocked = mimic.id;
   eco.grantLevelResult(s, mimic, passFor(mimic), T0);
   assert.ok(eco.claimAchievement(s, 'mimic').skin === 'royal' && s.inventory.skins.includes('royal'));
   assert.equal(eco.equipSkin(s, 'royal'), true);
@@ -512,14 +517,23 @@ function memoryStorage() {
   return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
 }
 
+// A notebook as PlayerModel.toJSON() writes it, after some play.
+function notebook() {
+  const m = new PlayerModel();
+  m.t.beeline = { o: 30.5, e: 18, v: 7.9, n: 42 };
+  m.t.routine = { wood: { stone: { o: 4, e: 1.5, v: 1.1, n: 6 } } };
+  m.matches = 12;
+  return JSON.parse(JSON.stringify(m.toJSON()));
+}
+
 // A save written by the 2D prototype (shape of fresh() in the v1 storage.js) after some play.
 const V1_SAVE = {
-  model: { v: 1, choices: 42, experts: { beeline: { hits: 10, n: 20 } } },
+  model: notebook(),
   ladder: { unlocked: 2, beaten: { pip: true, wren: true } },
   codex: { torch: { count: 3, first: '2026-09-21' }, lantern: { count: 1, first: '2026-09-22' } },
   dex: { beeline: { status: 'detected', acc: 0.6, chance: 0.3, date: '2026-09-22' } },
   stats: { matches: 12, wins: 7, snatched: 20, outread: 9, history: [{ t: 1, win: true, rival: 'pip', snatched: 1, outread: 2, gathers: 9 }] },
-  daily: { lastKey: '2026-09-24', streak: 3, best: 4, results: { '2026-09-24': { win: true } } },
+  daily: { lastKey: '2026-09-24', streak: 3, best: 4, results: { '2026-09-24': { win: true, stars: { player: 3, rival: 1 }, results: [], twist: 'rush', number: 5, snatched: 1, outread: 2 } } },
   settings: { sound: false, glass: true },
   seenHowTo: true,
   lastPlayed: 1758700000000,
@@ -590,6 +604,485 @@ test('save: fresh() has the contract fields; partial and corrupt saves are repai
   globalThis.localStorage = undefined;
   assert.deepEqual(load(), fresh(), 'no localStorage at all');
   save(fresh()); // must not throw
+});
+
+// ------------------------------------------------------------ save file: tabs, failures, repairs
+const tabB = await import('../src/storage.js?tab=b'); // a second tab: its own module state, the same storage
+const tabC = await import('../src/storage.js?tab=c');
+const stored = () => JSON.parse(localStorage.getItem('outcraft.v1'));
+const useStorage = (value) => Object.defineProperty(globalThis, 'localStorage', { configurable: true, writable: true, value });
+
+function quotaStorage(limit) {
+  const m = memoryStorage();
+  const setItem = (k, v) => {
+    if (String(v).length > limit) {
+      const e = new Error('The quota has been exceeded.');
+      e.name = 'QuotaExceededError';
+      throw e;
+    }
+    m.setItem(k, v);
+  };
+  return { ...m, setItem };
+}
+
+test('save: every save bumps rev; a stale tab cannot overwrite newer progress, and saves again after reloading', () => {
+  useStorage(memoryStorage());
+  const a = load();
+  const b = tabB.load();
+  assert.equal(a.rev, 0);
+  a.wallet.coins = 1850;
+  a.adventure.unlocked = 12;
+  assert.equal(save(a), true);
+  assert.equal(a.rev, 1);
+  assert.deepEqual(store.saveStatus(), { ok: true, reason: null });
+  assert.equal(save(a), true);
+  assert.equal(stored().rev, 2);
+  // Tab B, idle since before that, autosaves its stale copy (the heart-regen tick): refused.
+  b.hearts.n = 5;
+  assert.equal(tabB.save(b), false);
+  assert.deepEqual(tabB.saveStatus(), { ok: false, reason: 'stale' });
+  assert.equal(b.rev, 0, 'a refused save leaves the state alone');
+  assert.deepEqual([stored().wallet.coins, stored().adventure.unlocked, stored().rev], [1850, 12, 2]);
+  // Reloaded (what watchExternal triggers), tab B saves on top of A's progress...
+  const b2 = tabB.load();
+  assert.equal(b2.wallet.coins, 1850);
+  b2.wallet.gems = 99;
+  assert.equal(tabB.save(b2), true);
+  assert.equal(b2.rev, 3);
+  // ...and now tab A is the stale one.
+  assert.equal(save(a), false);
+  assert.equal(store.saveStatus().reason, 'stale');
+  assert.equal(stored().wallet.gems, 99);
+  // A reset never moves rev backwards, so the other tab still sees it as newer.
+  const a2 = load();
+  const w = store.wipe({ settings: a2.settings });
+  assert.equal(save(w), true);
+  assert.equal(w.rev, 4);
+  assert.deepEqual([stored().wallet.coins, stored().rev], [300, 4]);
+  assert.equal(tabB.save(b2), false, 'B must reload after the reset');
+  // A tab that never loaded compares with the rev of the state it saves.
+  assert.equal(tabC.save({ ...fresh(), rev: 2 }), false);
+  assert.equal(tabC.save({ ...fresh(), rev: 4 }), true);
+  assert.equal(stored().rev, 5);
+});
+
+test('save: watchExternal calls back when another tab writes the save, until unsubscribed', () => {
+  const ls = memoryStorage();
+  useStorage(ls);
+  const handlers = new Set();
+  globalThis.window = { addEventListener: (t, h) => t === 'storage' && handlers.add(h), removeEventListener: (t, h) => t === 'storage' && handlers.delete(h) };
+  let calls = 0;
+  const off = store.watchExternal(() => calls++);
+  const fire = (e) => handlers.forEach((h) => h(e));
+  fire({ key: 'outcraft.v1', storageArea: ls });
+  fire({ key: 'something.else', storageArea: ls });
+  fire({ key: 'outcraft.v1', storageArea: memoryStorage() }); // sessionStorage
+  fire({ key: null, storageArea: ls }); // localStorage.clear() in another tab
+  assert.equal(calls, 2);
+  off();
+  assert.equal(handlers.size, 0);
+  delete globalThis.window;
+  const noop = store.watchExternal(() => calls++);
+  assert.equal(typeof noop, 'function', 'no window (Node): a no-op');
+  noop();
+});
+
+test('save: blocked or full storage is reported; a full storage is trimmed and retried once', () => {
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    get() {
+      const e = new Error('The operation is insecure.');
+      e.name = 'SecurityError';
+      throw e;
+    },
+  });
+  assert.deepEqual(load(), fresh());
+  assert.deepEqual(store.saveStatus(), { ok: false, reason: 'blocked' });
+  assert.equal(store.storageAvailable(), false);
+  assert.equal(save(fresh()), false);
+  assert.equal(store.saveStatus().reason, 'blocked');
+  assert.equal(store.backup('x'), false);
+
+  useStorage(memoryStorage());
+  assert.equal(store.storageAvailable(), true);
+  const s = load();
+  for (let i = 0; i < 40; i++) s.stats.history.push({ t: i, win: true, rival: 'pip', snatched: 1, outread: 1, gathers: 9 });
+  for (let i = 1; i <= 14; i++) s.daily.results[`2026-09-${String(i).padStart(2, '0')}`] = { win: true, stars: { player: 3, rival: 0 }, results: [] };
+  const size = JSON.stringify({ ...s, rev: 1 }).length;
+  useStorage(quotaStorage(size - 100));
+  load();
+  localStorage.setItem('outcraft.v1.bak', 'old');
+  assert.equal(save(s), true, 'fits once the oldest history is trimmed');
+  assert.deepEqual([s.stats.history.length, Object.keys(s.daily.results).length, s.rev], [10, 7, 1]);
+  assert.equal(Object.keys(s.daily.results).sort()[0], '2026-09-08', 'the newest Daily results are kept');
+  assert.equal(localStorage.getItem('outcraft.v1.bak'), null, 'the backup made room');
+  assert.equal(stored().rev, 1);
+
+  useStorage(quotaStorage(100));
+  load();
+  const t = fresh();
+  assert.equal(save(t), false);
+  assert.deepEqual(store.saveStatus(), { ok: false, reason: 'quota' });
+  assert.equal(t.rev, 0, 'rev is only bumped by a save that went through');
+  useStorage(quotaStorage(0));
+  assert.equal(store.storageAvailable(), false);
+  assert.equal(store.saveStatus().reason, 'quota');
+  useStorage(memoryStorage());
+});
+
+// The corrupted-but-parseable saves that used to stop the 3D edition behind the "no WebGL" screen
+// (robustness review, corrupt.mjs), plus a few more of the same kind.
+const HIST = { matches: 3, wins: 1, snatched: 0, outread: 0, history: [] };
+const CORRUPT = {
+  dailyRewardKeyNum: { dailyReward: { lastKey: 20260926, day: 3 } },
+  dailyKeyNum: { daily: { lastKey: 5, streak: 2, best: 2, results: {} } },
+  quickRaceKeyObj: { quickRace: { key: {}, paid: 1 } },
+  modelString: { model: 'corrupt', stats: HIST },
+  modelPartial: { model: { t: {}, w: {}, matches: 2 }, stats: HIST },
+  ladderOOR: { ladder: { unlocked: 7, beaten: {} } },
+  codexPrim: { codex: { torch: 5 } },
+  dexPrim: { dex: { beeline: 'detected' } },
+  lastPlayedStr: { lastPlayed: 'yesterday', stats: HIST },
+  resultsBad: { daily: { lastKey: null, streak: 0, best: 0, results: { '2026-10-05': true } } },
+  resultsNoStars: { daily: { lastKey: '2026-10-05', streak: 1, best: 1, results: { '2026-10-05': { win: true }, soon: { stars: { player: 1, rival: 3 } } } } },
+  modelBadWeights: { model: { ...notebook(), w: { beeline: 'heavy' } } },
+  modelBadRoutine: { model: { ...notebook(), t: { ...notebook().t, routine: { wood: 3 } } } },
+  ladderBeaten: { ladder: { unlocked: -2, beaten: { pip: 'yes', fox: true, ghost: true } } },
+  historyJunk: { stats: { ...HIST, history: [null, 3, { t: 1, win: true }] } },
+  tipsString: { tips: 'glass', tutorialDone: 'yes' },
+  activeLevelBad: { activeLevel: { id: '4', at: T0 }, replays: { key: 7, paid: 'lots' } },
+  unlockedHuge: { adventure: { unlocked: 1e9 }, dexExtra: 1, dex: { book: { status: 'detected', acc: 'x' } } },
+};
+
+// Everything the title, map, level popup, a level, a Daily and the calendar do with a save.
+function playThrough(s) {
+  const d = todaysDaily(dateKey(new Date(T0)));
+  const done = s.daily.results[d.key];
+  if (done) assert.ok(Number.isFinite(done.stars.player) && Number.isFinite(done.stars.rival));
+  for (const k of [s.daily.lastKey, s.dailyReward.lastKey]) if (k) daysBetween(k, d.key);
+  assert.ok(RIVALS[s.ladder.unlocked].name);
+  const model = new PlayerModel(s.model);
+  model.dossier(1);
+  model.beginMatch();
+  model.endMatch();
+  eco.dailyStatus(s, T0);
+  eco.achievementStatus(s);
+  codexCount(s);
+  dexCounts(s);
+  eco.heartsNow(s, T0);
+  assert.ok(levelById(eco.currentLevel(s)));
+  const l1 = levelById(1);
+  assert.equal(eco.startLevelHeart(s, 1, T0), eco.heartsNow(s, T0).n > 0);
+  recordMatch(s, summary({ crafted: ['torch'] }), { now: T0 });
+  eco.finishLevelHeart(s, eco.grantLevelResult(s, l1, passFor(l1), T0).passed, T0);
+  const ranked = store.markDailyAttempt(s, d);
+  recordMatch(s, summary(), { daily: { ...d, ranked }, now: T0 });
+  eco.recordQuickRace(s, summary(), { now: T0, daily: ranked });
+  eco.claimDaily(s, T0);
+  if (s.tips) s.tips.glass = true;
+  return JSON.parse(JSON.stringify(s));
+}
+
+test('save: every corrupted save shape boots and plays; the broken field is repaired, the rest kept', () => {
+  const m = {};
+  for (const [name, saved] of Object.entries(CORRUPT)) {
+    const s = migrate(JSON.parse(JSON.stringify(saved)));
+    assert.doesNotThrow(() => playThrough(migrate(JSON.parse(JSON.stringify(saved)))), name);
+    assert.deepEqual(migrate(JSON.parse(JSON.stringify(s))), s, `${name}: repairing is stable`);
+    m[name] = s;
+  }
+  assert.deepEqual([m.dailyRewardKeyNum.dailyReward.lastKey, m.dailyRewardKeyNum.dailyReward.day], [null, 3]);
+  assert.deepEqual([m.dailyKeyNum.daily.lastKey, m.dailyKeyNum.daily.streak], [null, 2]);
+  assert.deepEqual(m.quickRaceKeyObj.quickRace, { key: null, paid: 1 });
+  assert.equal(m.modelString.model, null);
+  assert.equal(m.modelPartial.model, null);
+  assert.equal(m.modelString.stats.matches, 3, 'the rest of the save is kept');
+  assert.equal(m.modelBadWeights.model, null);
+  assert.equal(m.modelBadRoutine.model, null);
+  assert.deepEqual(migrate({ model: notebook() }).model, notebook(), 'a healthy notebook is kept as is');
+  assert.equal(m.ladderOOR.ladder.unlocked, RIVALS.length - 1);
+  assert.deepEqual(m.ladderBeaten.ladder, { unlocked: 0, beaten: { fox: true } });
+  assert.deepEqual(m.codexPrim.codex, {});
+  assert.deepEqual(migrate({ codex: { torch: { count: 2.5, first: '2026-10-01' }, rod: { count: 'x' } } }).codex, { torch: { count: 2, first: '2026-10-01' } });
+  assert.deepEqual(m.dexPrim.dex, {});
+  assert.deepEqual(m.unlockedHuge.dex, { book: { status: 'detected', acc: 0 } });
+  assert.equal(m.lastPlayedStr.lastPlayed, null);
+  assert.deepEqual(m.resultsBad.daily.results, {});
+  assert.deepEqual(m.resultsNoStars.daily.results, { '2026-10-05': { win: true, stars: { player: 0, rival: 0 } } });
+  assert.deepEqual(m.historyJunk.stats.history, [{ t: 1, win: true }]);
+  assert.deepEqual(['tips' in m.tipsString, m.tipsString.tutorialDone], [false, false]);
+  assert.deepEqual([m.activeLevelBad.activeLevel, m.activeLevelBad.replays], [null, { key: null, paid: 0 }]);
+  assert.equal(m.unlockedHuge.adventure.unlocked, LEVELS.length);
+
+  // Through load(): an unreadable save is backed up before anything overwrites it.
+  useStorage(memoryStorage());
+  const truncated = '{"wallet":{"coins":4200,"gems":80},"levels":{"1":{"stars":3';
+  localStorage.setItem('outcraft.v1', truncated);
+  const s = load();
+  assert.deepEqual(s, fresh());
+  assert.equal(localStorage.getItem('outcraft.v1.bak'), truncated);
+  assert.equal(save(s), true);
+  assert.equal(localStorage.getItem('outcraft.v1.bak'), truncated, 'still there after the next save');
+  localStorage.setItem('outcraft.v1', JSON.stringify(CORRUPT.ladderOOR));
+  assert.equal(load().ladder.unlocked, RIVALS.length - 1);
+  assert.equal(store.backup(), true);
+  assert.equal(localStorage.getItem('outcraft.v1.bak'), JSON.stringify(CORRUPT.ladderOOR));
+});
+
+test('save: the 3D-only flags start false, even for a classic save that finished the 2D tutorial', () => {
+  const f = fresh();
+  assert.deepEqual([f.rev, f.tutorial3d, f.seenHowTo3d, f.activeLevel, f.replays], [0, false, false, null, { key: null, paid: 0 }]);
+  const s = migrate(JSON.parse(JSON.stringify(V1_SAVE)));
+  assert.deepEqual([s.tutorialDone, s.seenHowTo, s.tutorial3d, s.seenHowTo3d], [true, true, false, false]);
+  const t = migrate({ tutorial3d: true, seenHowTo3d: 'yes', activeLevel: { id: 12, at: T0 }, rev: 7.5 });
+  assert.deepEqual([t.tutorial3d, t.seenHowTo3d, t.activeLevel, t.rev], [true, false, { id: 12, at: T0 }, 7]);
+});
+
+test('classic: MAKE THEM FORGET ME resets only the 2D progress; coins, skins, levels and hearts survive', () => {
+  useStorage(memoryStorage());
+  const s = load();
+  Object.assign(s.wallet, { coins: 1150, gems: 40 });
+  s.adventure.unlocked = 7;
+  s.levels[1] = { stars: 3, best: 4200, plays: 2 };
+  s.inventory.skins.push('scout');
+  s.hearts = { n: 3, since: T0 };
+  s.achievements.claimed['first-win'] = true;
+  s.tutorial3d = true;
+  s.settings.music = false;
+  s.model = notebook();
+  s.codex.torch = { count: 2, first: '2026-10-01' };
+  s.ladder = { unlocked: 3, beaten: { pip: true, wren: true, fox: true } };
+  s.stats.matches = 7;
+  s.tutorialDone = true;
+  assert.equal(save(s), true);
+  // The classic page: load, forget (exactly as classic/src/main.js does), save.
+  let c = classic.load();
+  c = classic.wipe({ settings: c.settings, seenHowTo: true });
+  classic.save(c);
+  const raw = stored();
+  assert.deepEqual([raw.model, raw.codex, raw.dex, raw.ladder, raw.stats.matches, raw.seenHowTo, raw.tutorialDone], [null, {}, {}, { unlocked: 0, beaten: {} }, 0, true, undefined]);
+  const back = load();
+  assert.deepEqual(back.wallet, { coins: 1150, gems: 40 });
+  assert.deepEqual([back.adventure.unlocked, back.levels[1], back.inventory.skins, back.hearts], [7, { stars: 3, best: 4200, plays: 2 }, ['explorer', 'scout'], { n: 3, since: T0 }]);
+  assert.deepEqual([back.achievements.claimed, back.tutorial3d, back.settings.music, back.rev], [{ 'first-win': true }, true, false, 1]);
+  // No save at all: a plain classic fresh start.
+  useStorage(memoryStorage());
+  assert.deepEqual(Object.keys(classic.wipe({ seenHowTo: true })).sort(), ['codex', 'daily', 'dex', 'ladder', 'lastPlayed', 'model', 'seenHowTo', 'settings', 'stats']);
+});
+
+// ------------------------------------------------------------ hearts: Candy Crush model
+test('hearts: PLAY spends a heart, a pass refunds it; a fail, a quit or a reload keeps it spent', () => {
+  const s = fresh();
+  assert.equal(eco.startLevelHeart(s, 3, T0), true);
+  assert.deepEqual([s.hearts.n, s.hearts.since, s.activeLevel], [4, T0, { id: 3, at: T0 }]);
+  assert.equal(eco.finishLevelHeart(s, true, T0 + 2 * MIN), true);
+  assert.deepEqual([s.hearts.n, s.hearts.since, s.activeLevel], [5, null, null]);
+  assert.equal(eco.finishLevelHeart(s, true, T0 + 3 * MIN), false, 'no level in progress: nothing to refund');
+  assert.equal(s.hearts.n, 5);
+  // A fail keeps the heart spent.
+  eco.startLevelHeart(s, 3, T0 + 10 * MIN);
+  assert.equal(eco.finishLevelHeart(s, false, T0 + 12 * MIN), false);
+  assert.deepEqual([s.hearts.n, s.activeLevel], [4, null]);
+  // Quit or restart.
+  eco.startLevelHeart(s, 3, T0 + 13 * MIN);
+  eco.abandonLevel(s);
+  assert.deepEqual([s.hearts.n, s.activeLevel], [3, null]);
+  assert.equal(eco.finishLevelHeart(s, true, T0 + 14 * MIN), false, 'an abandoned level refunds nothing');
+  // A refund while regenerating keeps the running timer, as if the heart had never been spent.
+  eco.startLevelHeart(s, 4, T0 + 15 * MIN);
+  assert.equal(s.hearts.n, 2);
+  eco.finishLevelHeart(s, true, T0 + 16 * MIN);
+  assert.deepEqual([s.hearts.n, s.hearts.since], [3, T0 + 10 * MIN]);
+  assert.deepEqual(eco.heartsNow(s, T0 + 30 * MIN), { n: 4, nextInMs: 20 * MIN });
+  // A reload or a closed app mid-level: the save already has the heart spent and the level in progress.
+  useStorage(memoryStorage());
+  load();
+  eco.startLevelHeart(s, 4, T0 + 31 * MIN);
+  assert.equal(save(s), true);
+  const r = load();
+  assert.deepEqual([r.hearts.n, r.activeLevel], [3, { id: 4, at: T0 + 31 * MIN }]);
+  assert.equal(eco.takeStaleActiveLevel(r), 4);
+  assert.deepEqual([r.hearts.n, r.activeLevel, eco.takeStaleActiveLevel(r)], [3, null, null]);
+  assert.equal(eco.finishLevelHeart(r, true, T0 + 32 * MIN), false, 'nothing to refund after the reload');
+  // No heart: nothing is spent and no level starts, until one regenerates.
+  const z = fresh();
+  z.hearts = { n: 0, since: T0 };
+  assert.equal(eco.startLevelHeart(z, 2, T0 + MIN), false);
+  assert.deepEqual([z.hearts, z.activeLevel], [{ n: 0, since: T0 }, null]);
+  assert.equal(eco.startLevelHeart(z, 2, T0 + 20 * MIN), true);
+  assert.deepEqual([z.hearts.n, z.hearts.since, z.activeLevel.id], [0, T0 + 20 * MIN, 2]);
+});
+
+// ------------------------------------------------------------ Adventure rewards
+test('grantLevelResult: replays pay coins 3 times a day (new stars still pay gems); the next day pays again', () => {
+  const s = fresh();
+  const l = levelById(2);
+  const m = levelById(1);
+  s.adventure.unlocked = 2;
+  const [, , three] = l.thresholds;
+  const pay = (lv) => Math.max(5, Math.round((lv.reward.coins * eco.REPLAY_SHARE) / 5) * 5);
+  assert.equal(eco.grantLevelResult(s, m, passFor(m), T0).firstClear, true);
+  const first = eco.grantLevelResult(s, l, passFor(l, 0), T0);
+  assert.deepEqual([first.firstClear, first.replayCapped, first.replaysPaid, first.replayCap], [true, false, 0, eco.REPLAYS_PAID_PER_DAY]);
+  assert.equal(eco.REPLAYS_PAID_PER_DAY, 3);
+  const r1 = eco.grantLevelResult(s, m, passFor(m), T0 + MIN);
+  assert.deepEqual([r1.coins, r1.replayCapped, r1.replaysPaid], [pay(m), false, 1]);
+  for (let i = 2; i <= 3; i++) {
+    const r = eco.grantLevelResult(s, l, passFor(l, 0), T0 + i * MIN);
+    assert.deepEqual([r.coins, r.replayCapped, r.replaysPaid], [pay(l), false, i], 'replays of any level share the allowance');
+  }
+  const fail = eco.grantLevelResult(s, l, summary({ win: false }), T0 + 4 * MIN);
+  assert.deepEqual([fail.coins, fail.replayCapped, fail.replaysPaid], [0, false, 3], 'a failed replay is not a paid replay');
+  const coins = s.wallet.coins;
+  const gems = s.wallet.gems;
+  const capped = eco.grantLevelResult(s, l, passFor(l, three), T0 + 5 * MIN);
+  assert.deepEqual([capped.coins, capped.replayCapped, capped.newStars, capped.gems], [0, true, 2, eco.STAR_GEMS[2] + eco.STAR_GEMS[3]]);
+  assert.deepEqual([s.wallet.coins, s.wallet.gems, s.levels[2].stars], [coins, gems + capped.gems, 3]);
+  assert.equal(eco.grantLevelResult(s, l, passFor(l, 0), day(1, 0) - MIN).replayCapped, true, 'still the same local day at 23:59');
+  const next = eco.grantLevelResult(s, l, passFor(l, 0), day(1, 0) + MIN);
+  assert.deepEqual([next.coins, next.replayCapped, next.replaysPaid], [pay(l), false, 1]);
+  assert.equal(s.levels[2].plays, 7);
+});
+
+test('grantLevelResult / recordQuickRace: practice (the blind rival) and a level above the unlocked one grant nothing', () => {
+  const s = fresh();
+  const l1 = levelById(1);
+  const before = JSON.stringify(s);
+  const p = eco.grantLevelResult(s, l1, passFor(l1, 99999), T0, { practice: true });
+  assert.deepEqual([p.passed, p.stars, p.newStars, p.coins, p.gems, p.booster, p.unlocked, p.firstClear, p.practice], [true, 3, 0, 0, 0, null, null, false, true]);
+  const q = eco.recordQuickRace(s, summary({ fooled: 3, rivalStars: 0 }), { now: T0, daily: true, practice: true });
+  assert.deepEqual(q, { coins: 0, capped: false, paidToday: 0, cap: eco.QUICK_PAID_PER_DAY, practice: true });
+  // The save was reset while level 5 was being played: its result must not unlock levels 1-6.
+  const five = levelById(5);
+  const g = eco.grantLevelResult(s, five, passFor(five, 99999), T0);
+  assert.deepEqual([g.passed, g.coins, g.gems, g.unlocked, g.ignored], [true, 0, 0, null, true]);
+  assert.equal(JSON.stringify(s), before, 'nothing in the save changed');
+  // An unlocked level is granted as usual.
+  s.adventure.unlocked = 5;
+  assert.equal(eco.grantLevelResult(s, five, passFor(five), T0).unlocked, 6);
+});
+
+test('bosses: the first clear pays a booster on top of the double reward; replays and other levels do not', () => {
+  const s = fresh();
+  const bosses = LEVELS.filter((l) => l.boss);
+  assert.equal(new Set(bosses.slice(0, eco.BOOSTER_IDS.length).map(eco.bossBooster)).size, eco.BOOSTER_IDS.length, 'every booster in turn');
+  for (const boss of bosses) {
+    s.adventure.unlocked = boss.id;
+    const id = eco.bossBooster(boss);
+    const n = eco.boosterCount(s, id);
+    const r = eco.grantLevelResult(s, boss, passFor(boss), T0);
+    assert.deepEqual([r.firstClear, r.booster, eco.boosterCount(s, id)], [true, id, n + 1]);
+    assert.equal(eco.grantLevelResult(s, boss, passFor(boss), T0).booster, null);
+    assert.equal(eco.boosterCount(s, id), n + 1);
+  }
+  assert.equal(eco.bossBooster(levelById(9)), null);
+  s.adventure.unlocked = 9;
+  assert.equal(eco.grantLevelResult(s, levelById(9), passFor(levelById(9)), T0).booster, null);
+});
+
+test('currentLevel / adventureComplete: the title and map never point at a cleared level 60', () => {
+  const s = fresh();
+  assert.deepEqual([eco.currentLevel(s), eco.adventureComplete(s)], [1, false]);
+  for (const l of LEVELS.slice(0, 5)) eco.grantLevelResult(s, l, passFor(l), T0);
+  assert.deepEqual([s.adventure.unlocked, eco.currentLevel(s)], [6, 6]);
+  for (const l of LEVELS.slice(0, 59)) s.levels[l.id] = { stars: 3, best: 1, plays: 1 };
+  s.levels[7].stars = 2;
+  s.adventure.unlocked = 60;
+  assert.deepEqual([eco.currentLevel(s), eco.adventureComplete(s)], [60, false]);
+  const last = levelById(60);
+  const r = eco.grantLevelResult(s, last, passFor(last), T0);
+  assert.deepEqual([r.passed, r.unlocked, s.adventure.unlocked], [true, null, 60]);
+  assert.equal(eco.adventureComplete(s), true);
+  assert.equal(eco.currentLevel(s), 7, 'all cleared: the first level still short of 3 stars');
+  s.levels[7].stars = 3;
+  assert.equal(eco.currentLevel(s), 60, 'one star on level 60');
+  s.levels[60].stars = 3;
+  assert.equal(eco.currentLevel(s), 60, 'everything perfect: the last level');
+  // A save whose unlocked level is ahead of an uncleared one points at the gap.
+  const odd = fresh();
+  odd.adventure.unlocked = 6;
+  for (const id of [1, 2, 4, 5]) odd.levels[id] = { stars: 1, best: 0, plays: 1 };
+  assert.equal(eco.currentLevel(odd), 3);
+});
+
+// ------------------------------------------------------------ Daily Commission and Quick Race
+test('Daily Commission: the ranked attempt is used up when it starts; quit, restart or reload leave a loss', () => {
+  const d = todaysDaily('2026-10-05');
+  const s = fresh();
+  assert.equal(store.markDailyAttempt(s, d), true);
+  const e = s.daily.results[d.key];
+  assert.deepEqual([e.pending, e.win, e.stars, e.number, e.twist], [true, false, { player: 0, rival: 0 }, d.number, d.twist.id]);
+  assert.deepEqual([s.daily.streak, s.daily.best, s.daily.lastKey], [1, 1, d.key]);
+  // Quit, restart or reload before the end: every later attempt today is practice.
+  useStorage(memoryStorage());
+  load();
+  save(s);
+  const r = load();
+  assert.equal(store.markDailyAttempt(r, d), false);
+  assert.equal(r.daily.streak, 1, 'the day is counted once');
+  assert.equal(recordMatch(r, summary(), { daily: { ...d, ranked: false }, now: T0 }).dailyInfo, null, 'a practice win records nothing');
+  assert.deepEqual([r.daily.results[d.key].pending, r.daily.results[d.key].win], [true, false]);
+  assert.ok(classic.load().daily.results[d.key], 'the classic game sees the attempt as used too');
+
+  // The ranked attempt that finishes replaces its pending entry (the streak is not counted twice).
+  const s2 = fresh();
+  s2.daily = { lastKey: '2026-10-04', streak: 3, best: 3, results: {} };
+  assert.equal(store.markDailyAttempt(s2, d), true);
+  assert.equal(s2.daily.streak, 4);
+  const rec = recordMatch(s2, summary({ rivalStars: 2 }), { daily: { ...d, ranked: true }, now: T0 });
+  assert.deepEqual(rec.dailyInfo, { ranked: true, streak: 4 });
+  const res = s2.daily.results[d.key];
+  assert.deepEqual([res.win, res.stars, 'pending' in res], [true, { player: 3, rival: 2 }, false]);
+  assert.equal(recordMatch(s2, summary({ win: false }), { daily: { ...d, ranked: true }, now: T0 }).dailyInfo, null, 'a final result is never replaced');
+  assert.equal(s2.daily.results[d.key].win, true);
+  assert.equal(store.markDailyAttempt(s2, todaysDaily('2026-10-06')), true, 'tomorrow is ranked again');
+  assert.equal(s2.daily.streak, 5);
+  // Callers that record a Daily without marking it first still count it once.
+  const s3 = fresh();
+  assert.equal(recordMatch(s3, summary(), { daily: d, now: T0 }).dailyInfo.streak, 1);
+  assert.equal(store.markDailyAttempt(s3, d), false);
+});
+
+test('recordQuickRace: returns { coins, capped, paidToday, cap }; only the ranked Daily pays double', () => {
+  const s = fresh();
+  const W = eco.QUICK_WIN_COINS;
+  const cap = eco.QUICK_PAID_PER_DAY;
+  assert.deepEqual(eco.recordQuickRace(s, summary(), { now: T0, daily: { ranked: false } }), { coins: W, capped: false, paidToday: 1, cap });
+  assert.deepEqual(eco.recordQuickRace(s, summary(), { now: T0, daily: { ranked: true } }), { coins: 2 * W, capped: false, paidToday: 2, cap });
+  assert.deepEqual(eco.recordQuickRace(s, summary(), { now: T0, daily: true }), { coins: 2 * W, capped: false, paidToday: 3, cap });
+  assert.deepEqual(eco.recordQuickRace(s, summary({ win: false }), { now: T0 }), { coins: 0, capped: false, paidToday: 3, cap });
+  eco.recordQuickRace(s, summary(), { now: T0 });
+  eco.recordQuickRace(s, summary(), { now: T0 });
+  assert.deepEqual(eco.recordQuickRace(s, summary(), { now: T0 }), { coins: 0, capped: true, paidToday: cap, cap });
+  assert.deepEqual(eco.recordQuickRace(s, summary({ win: false }), { now: T0 }), { coins: 0, capped: false, paidToday: cap, cap });
+  assert.deepEqual(eco.recordQuickRace(s, summary(), { now: day(1) }), { coins: W, capped: false, paidToday: 1, cap });
+});
+
+// ------------------------------------------------------------ daily reward calendar
+test('daily reward: the claimed day-7 tile shows the Festival skin it paid; the streak shown on the title', () => {
+  const s = fresh();
+  assert.equal(eco.dailyStreak(s, day(0)), 0);
+  for (let d = 0; d < 6; d++) eco.claimDaily(s, day(d));
+  assert.equal(eco.dailyStreak(s, day(5)), 6);
+  assert.deepEqual([eco.dailyStatus(s, day(6)).day, eco.dailyStreak(s, day(6))], [7, 6]);
+  assert.equal(eco.claimDaily(s, day(6)).skin, 'festival');
+  let st = eco.dailyStatus(s, day(6, 22));
+  const tile = st.rewards[6];
+  assert.deepEqual([tile.status, tile.skin, tile.gems, st.streak], ['claimed', 'festival', undefined, 7]);
+  assert.ok(tile.label.includes(SKIN_BY_ID.festival.name));
+  // The skin marker survives a save round trip.
+  assert.equal(eco.dailyStatus(migrate(JSON.parse(JSON.stringify(s))), day(6, 22)).rewards[6].skin, 'festival');
+  // The next day a new run starts, and day 7 now offers the gems.
+  st = eco.dailyStatus(s, day(7));
+  assert.deepEqual([st.day, st.streak, st.rewards[6].gems, st.rewards[6].skin, st.rewards[6].status], [1, 0, 25, undefined, 'locked']);
+  eco.claimDaily(s, day(7));
+  eco.claimDaily(s, day(8));
+  assert.equal(eco.dailyStreak(s, day(9)), 2);
+  assert.equal(eco.dailyStreak(s, day(10)), 0, 'a missed day breaks the streak');
+  // A day 7 paid in gems (skin already owned) shows the gems.
+  for (let d = 10; d <= 16; d++) eco.claimDaily(s, day(d));
+  st = eco.dailyStatus(s, day(16));
+  assert.deepEqual([st.day, st.rewards[6].status, st.rewards[6].gems, st.rewards[6].skin], [7, 'claimed', 25, undefined]);
 });
 
 console.log(`\n${passed} tests passed`);

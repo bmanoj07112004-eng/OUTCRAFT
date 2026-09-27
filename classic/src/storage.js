@@ -44,11 +44,16 @@ export function save(state) {
   } catch {}
 }
 
+// Forgets this game's progress only: the 3D edition shares the save, so every field this game does
+// not own (coins, skins, levels...) is kept.
 export function wipe(keep = {}) {
+  let other = {};
   try {
-    localStorage.removeItem(KEY);
+    const s = JSON.parse(localStorage.getItem(KEY));
+    if (s && typeof s === 'object' && !Array.isArray(s)) other = s;
   } catch {}
-  return { ...fresh(), ...keep };
+  delete other.tutorialDone;
+  return { ...other, ...fresh(), ...keep };
 }
 
 export function todaysDaily(key = dateKey()) {

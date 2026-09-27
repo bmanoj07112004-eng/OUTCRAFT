@@ -44,7 +44,46 @@ export function canStartLevel(state, now = Date.now()) {
   return heartsNow(state, now).n > 0;
 }
 
-// On a failed or abandoned Adventure level. grantLevelResult never takes hearts by itself.
+// Adventure hearts work like Candy Crush: PLAY spends a heart, a pass gives it back. The level in
+// progress is saved as state.activeLevel, so leaving by any door (quit, restart, reload, closing the
+// app) keeps the heart spent.
+
+// Spends a heart for level `levelId`; false (nothing spent) when there is none.
+export function startLevelHeart(state, levelId, now = Date.now()) {
+  now = clock(now);
+  const { n } = heartsNow(state, now);
+  if (n <= 0) return false;
+  state.hearts.n = n - 1;
+  if (state.hearts.since == null) state.hearts.since = now;
+  state.activeLevel = { id: levelId, at: now };
+  return true;
+}
+
+// The level ended: a pass refunds the heart spent at PLAY. Returns true when a heart came back.
+export function finishLevelHeart(state, passed, now = Date.now()) {
+  now = clock(now);
+  const active = !!state.activeLevel;
+  state.activeLevel = null;
+  if (!passed || !active) return false;
+  const { n } = heartsNow(state, now);
+  state.hearts.n = Math.min(HEARTS_MAX, n + 1);
+  if (state.hearts.n >= HEARTS_MAX) state.hearts.since = null;
+  return true;
+}
+
+// Quit or restart: the heart stays spent.
+export function abandonLevel(state) {
+  state.activeLevel = null;
+}
+
+// At boot: a level left by a reload or a closed app (its heart stays spent). Returns its id or null.
+export function takeStaleActiveLevel(state) {
+  const id = state.activeLevel ? state.activeLevel.id : null;
+  state.activeLevel = null;
+  return id;
+}
+
+// Takes a heart directly (the Adventure itself uses startLevelHeart / finishLevelHeart).
 export function loseHeart(state, now = Date.now()) {
   now = clock(now);
   const { n } = heartsNow(state, now);
@@ -65,14 +104,20 @@ export function refillHearts(state, now = Date.now()) {
 }
 
 // ------------------------------------------------------------ boosters
-// `options` is merged into the Match options (see the contract in docs/3d-architecture.md).
+// `options` is merged into the Match options (see the contract in docs/3d-architecture.md). Priced at
+// two to five first clears of the early worlds, so a booster is a real choice, not a luxury.
 export const BOOSTERS = {
-  boots: { id: 'boots', name: 'Speed Boots', desc: 'You run 12% faster.', icon: '👟', price: { coins: 150 }, options: { playerSpeedMul: 1.12 } },
-  backpack: { id: 'backpack', name: 'Big Backpack', desc: 'One extra bag slot, just for you.', icon: '🎒', price: { coins: 200 }, options: { playerBagBonus: 1 } },
-  headstart: { id: 'headstart', name: 'Head Start', desc: 'Your rival waits 2.5 s at the start of every order.', icon: '⏱️', price: { coins: 250 }, options: { rivalDelay: 2.5 } },
-  fog: { id: 'fog', name: 'Fog Cloak', desc: 'Your rival cannot read you during the first order.', icon: '🌫️', price: { coins: 300 }, options: { blindOrders: 1 } },
+  boots: { id: 'boots', name: 'Speed Boots', desc: 'You run 12% faster.', icon: '👟', price: { coins: 60 }, options: { playerSpeedMul: 1.12 } },
+  backpack: { id: 'backpack', name: 'Big Backpack', desc: 'One extra bag slot, just for you.', icon: '🎒', price: { coins: 80 }, options: { playerBagBonus: 1 } },
+  headstart: { id: 'headstart', name: 'Head Start', desc: 'Your rival waits 2.5 s at the start of every order.', icon: '⏱️', price: { coins: 100 }, options: { rivalDelay: 2.5 } },
+  fog: { id: 'fog', name: 'Fog Cloak', desc: 'Your rival cannot read you during the first order.', icon: '🌫️', price: { coins: 120 }, options: { blindOrders: 1 } },
 };
 export const BOOSTER_IDS = Object.keys(BOOSTERS);
+
+// The booster a boss pays on its first clear, on top of its double reward (one per world, in turn).
+export function bossBooster(level) {
+  return level && level.boss ? BOOSTER_IDS[level.world % BOOSTER_IDS.length] : null;
+}
 
 export function boosterCount(state, id) {
   return state.inventory.boosters[id] || 0;
@@ -215,9 +260,12 @@ export function equipSkin(state, id) {
 }
 
 // ------------------------------------------------------------ Adventure results
-// First clear pays level.reward; a passed replay pays REPLAY_SHARE of the coins. Every star earned for
-// the first time on a level pays STAR_GEMS[star] gems (the first star is the clear itself).
+// First clear pays level.reward (and a booster for a boss); a passed replay pays REPLAY_SHARE of the
+// coins, for at most REPLAYS_PAID_PER_DAY replays per local day (no grinding one short level for
+// coins). Every star earned for the first time on a level pays STAR_GEMS[star] gems (the first star
+// is the clear itself), replay or not.
 export const REPLAY_SHARE = 0.2;
+export const REPLAYS_PAID_PER_DAY = 3;
 export const STAR_GEMS = [0, 0, 1, 1];
 
 export function levelRecord(state, id) {
@@ -232,6 +280,20 @@ export function clearedCount(state) {
   return LEVELS.filter((l) => state.levels[l.id]?.stars > 0).length;
 }
 
+// Every level cleared (level 60 included).
+export function adventureComplete(state) {
+  return clearedCount(state) === LEVELS.length;
+}
+
+// The level the title and the map point at: the first unlocked level not cleared yet; once every
+// unlocked level is cleared (after level 60), the first one still short of 3 stars, else the last.
+export function currentLevel(state) {
+  const top = Math.min(Math.max(1, Math.floor(state.adventure.unlocked) || 1), LEVELS.length);
+  const stars = (l) => state.levels[l.id]?.stars || 0;
+  const open = LEVELS.filter((l) => l.id <= top);
+  return (open.find((l) => !stars(l)) || open.find((l) => stars(l) < 3) || open[open.length - 1]).id;
+}
+
 // Lifetime counters that every finished match feeds (Adventure, Quick Race and Daily Commission).
 function countMatch(state, summary) {
   const c = state.counters;
@@ -241,13 +303,32 @@ function countMatch(state, summary) {
   if (summary.winner === 'player' && (summary.stars?.rival || 0) === 0) c.flawless += 1;
 }
 
-// Call once per finished Adventure level (not for quits). Does not take hearts: call loseHeart on a fail.
-export function grantLevelResult(state, level, summary, now = Date.now()) {
+// A per-day allowance ({ key, paid }, see state.quickRace and state.replays) starts again at local midnight.
+const paidToday = (q, now) => (q && q.key === dateKey(new Date(now)) ? q.paid : 0);
+function allowance(q, now) {
+  const key = dateKey(new Date(now));
+  if (q.key !== key) {
+    q.key = key;
+    q.paid = 0;
+  }
+  return q;
+}
+
+// Call once per finished Adventure level (not for quits). Hearts are separate (finishLevelHeart).
+// practice (the ?blind=1 rival) records and pays nothing; neither does a level above adventure.unlocked
+// (the save was reset while it was being played). replayCapped: a passed replay that paid no coins
+// because today's REPLAYS_PAID_PER_DAY were used (replaysPaid of replayCap).
+export function grantLevelResult(state, level, summary, now = Date.now(), { practice = false } = {}) {
+  now = clock(now);
   const passed = levelPassed(level, summary);
   const stars = starsFor(level, summary);
   const score = Math.max(0, Math.round(Number(summary.score) || 0));
   const rec = { ...levelRecord(state, level.id) };
   const prevStars = rec.stars;
+  const result = (r) => ({ passed, stars, newStars: 0, firstClear: false, coins: 0, gems: 0, booster: null, unlocked: null, best: rec.best, score, prevStars, replayCapped: false, replaysPaid: paidToday(state.replays, now), replayCap: REPLAYS_PAID_PER_DAY, ...r });
+  if (practice) return result({ practice: true });
+  if (level.id > state.adventure.unlocked) return result({ ignored: true });
+  const replays = allowance(state.replays || (state.replays = { key: null, paid: 0 }), now);
   rec.plays += 1;
   rec.stars = Math.max(prevStars, stars);
   if (passed) rec.best = Math.max(rec.best, score);
@@ -257,10 +338,17 @@ export function grantLevelResult(state, level, summary, now = Date.now()) {
   const newStars = Math.max(0, stars - prevStars);
   let coins = 0;
   let gems = 0;
+  let booster = null;
+  let replayCapped = false;
   if (firstClear) {
     coins = level.reward.coins;
     gems = level.reward.gems || 0;
-  } else if (passed) coins = Math.max(5, round5(level.reward.coins * REPLAY_SHARE));
+    booster = bossBooster(level);
+    if (booster) state.inventory.boosters[booster] = boosterCount(state, booster) + 1;
+  } else if (passed && replays.paid < REPLAYS_PAID_PER_DAY) {
+    replays.paid += 1;
+    coins = Math.max(5, round5(level.reward.coins * REPLAY_SHARE));
+  } else if (passed) replayCapped = true;
   for (let s = prevStars + 1; s <= stars; s++) gems += STAR_GEMS[s];
 
   let unlocked = null;
@@ -275,31 +363,33 @@ export function grantLevelResult(state, level, summary, now = Date.now()) {
   if (passed) c.levelsWon += 1;
   c.starsEarned += newStars;
   countMatch(state, summary);
-  state.lastPlayed = clock(now);
-  return { passed, stars, newStars, firstClear, coins, gems, unlocked, best: rec.best, score, prevStars };
+  state.lastPlayed = now;
+  return result({ newStars, firstClear, coins, gems, booster, unlocked, replayCapped });
 }
 
 // ------------------------------------------------------------ Quick Race and Daily Commission
-// A small coin reward per win, for at most QUICK_PAID_PER_DAY paid wins per local day (no farming).
-// Call it once for every finished Quick Race or Daily Commission match, won or lost (it also feeds the
-// fake-out / outread / flawless achievements).
+// A small coin reward per win, for at most QUICK_PAID_PER_DAY paid wins per local day (no farming);
+// the ranked Daily Commission attempt pays double. Call it once for every finished Quick Race or Daily
+// Commission match, won or lost (it also feeds the fake-out / outread / flawless achievements).
+// daily: the Daily context ({ ranked }) or true for the ranked attempt; a practice Daily pays like a
+// Quick Race. practice (the ?blind=1 rival): no coins and no achievement progress.
+// Returns { coins, capped, paidToday, cap } (capped: a win that paid nothing because the cap was hit).
 export const QUICK_WIN_COINS = 10;
 export const QUICK_PAID_PER_DAY = 5;
 
-export function recordQuickRace(state, summary, { now = Date.now(), daily = false } = {}) {
+export function recordQuickRace(state, summary, { now = Date.now(), daily = false, practice = false } = {}) {
+  now = clock(now);
+  const out = (coins, capped) => ({ coins, capped, paidToday: paidToday(state.quickRace, now), cap: QUICK_PAID_PER_DAY });
+  if (practice) return { ...out(0, false), practice: true };
+  const q = allowance(state.quickRace, now);
   countMatch(state, summary);
-  const q = state.quickRace;
-  const key = dateKey(new Date(clock(now)));
-  if (q.key !== key) {
-    q.key = key;
-    q.paid = 0;
-  }
-  if (summary.winner !== 'player') return { coins: 0, capped: false };
-  if (q.paid >= QUICK_PAID_PER_DAY) return { coins: 0, capped: true };
+  if (summary.winner !== 'player') return out(0, false);
+  if (q.paid >= QUICK_PAID_PER_DAY) return out(0, true);
   q.paid += 1;
-  const coins = QUICK_WIN_COINS * (daily ? 2 : 1);
+  const ranked = daily === true || !!(daily && daily.ranked);
+  const coins = QUICK_WIN_COINS * (ranked ? 2 : 1);
   addCoins(state, coins);
-  return { coins, capped: false };
+  return out(coins, false);
 }
 
 // ------------------------------------------------------------ daily reward
@@ -314,9 +404,12 @@ export const DAILY_REWARDS = [
   { day: 7, skin: 'festival', altGems: 25 },
 ];
 
-// Day 7 pays the Festival skin, or 25 gems once it is owned.
-function resolveDaily(state, r) {
-  if (r.skin && ownsSkin(state, r.skin)) return { day: r.day, gems: r.altGems };
+// Day 7 pays the Festival skin, or 25 gems once it is owned. A tile claimed today shows what it paid
+// (the skin, when this claim is the one that gave it).
+function resolveDaily(state, r, claimedToday) {
+  const d = state.dailyReward;
+  const gaveSkin = claimedToday && d.skinKey === d.lastKey;
+  if (r.skin && ownsSkin(state, r.skin) && !gaveSkin) return { day: r.day, gems: r.altGems };
   return { ...r };
 }
 
@@ -326,8 +419,9 @@ function msToMidnight(now) {
   return d.getTime() - now;
 }
 
-// day = the day that can be claimed now (canClaim) or the day already claimed today. Each entry of
-// `rewards` carries label, icon and status 'claimed' | 'today' | 'locked' for the calendar.
+// day = the day that can be claimed now (canClaim) or the day already claimed today; streak = days of
+// the current 7-day run claimed so far (0 once a day is missed). Each entry of `rewards` carries
+// label, icon and status 'claimed' | 'today' | 'locked' for the calendar.
 export function dailyStatus(state, now = Date.now()) {
   now = clock(now);
   const d = state.dailyReward;
@@ -343,11 +437,16 @@ export function dailyStatus(state, now = Date.now()) {
     day = gap === 1 ? (d.day % 7) + 1 : 1;
   }
   const rewards = DAILY_REWARDS.map((r) => {
-    const x = resolveDaily(state, r);
     const status = r.day < day || (r.day === day && !canClaim) ? 'claimed' : r.day === day ? 'today' : 'locked';
+    const x = resolveDaily(state, r, !canClaim && r.day === day);
     return { ...x, label: rewardLabel(x), icon: rewardIcon(x), status };
   });
-  return { canClaim, day, rewards, nextInMs: canClaim ? 0 : msToMidnight(now) };
+  return { canClaim, day, streak: canClaim ? day - 1 : day, rewards, nextInMs: canClaim ? 0 : msToMidnight(now) };
+}
+
+// Consecutive days of the current 7-day run claimed so far (0 after a missed day).
+export function dailyStreak(state, now = Date.now()) {
+  return dailyStatus(state, now).streak;
 }
 
 // Returns the granted reward ({ day, label, icon, coins?, gems?, booster?, count?, skin? }) or null.
@@ -359,7 +458,9 @@ export function claimDaily(state, now = Date.now()) {
   d.lastKey = dateKey(new Date(now));
   d.day = st.day;
   d.best = Math.max(d.best || 0, st.day);
-  return { day: st.day, ...grant(state, DAILY_REWARDS[st.day - 1]) };
+  const got = grant(state, DAILY_REWARDS[st.day - 1]);
+  if (got.skin) d.skinKey = d.lastKey;
+  return { day: st.day, ...got };
 }
 
 // ------------------------------------------------------------ achievements
