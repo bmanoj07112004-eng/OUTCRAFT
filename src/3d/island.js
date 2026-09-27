@@ -729,7 +729,7 @@ export class Island3D {
     this.cardTex.colorSpace = THREE.SRGBColorSpace;
     this.cardTex.anisotropy = 4;
     this.cardMat = new THREE.MeshBasicMaterial({ map: this.cardTex, transparent: true, alphaTest: 0.02, toneMapped: false, fog: false });
-    this.haloMat = new THREE.MeshBasicMaterial({ color: '#ffc83d', toneMapped: false });
+    this.haloMat = new THREE.MeshBasicMaterial({ color: '#ffc83d', toneMapped: false, transparent: true });
     this.orderItem = null;
     this.orderColor = '#ffc83d';
   }
@@ -1425,6 +1425,11 @@ export class Island3D {
     this.smoke.instanceMatrix.needsUpdate = true;
 
     if (this.display.visible) {
+      // Fade the floating card when the camera comes close (it would fill the view over the Workshop).
+      const cd = this.engine.camera.position.distanceTo(this.display.position);
+      const fade = clamp01((cd - 5) / 5) * 0.88 + 0.12;
+      this.cardMat.opacity = fade;
+      this.haloMat.opacity = fade;
       this.card.rotation.y = t * 0.9;
       this.card.position.y = Math.sin(t * 2) * 0.08;
       this.halo.rotation.y = -t * 1.5;

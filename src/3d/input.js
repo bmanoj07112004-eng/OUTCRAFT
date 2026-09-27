@@ -373,7 +373,8 @@ export class Input {
       const j = this._joy;
       const r = this.canvas.getBoundingClientRect();
       j.bx = r.left + 30 + BASE / 2;
-      j.by = r.bottom - 150 - BASE / 2;
+      // Above the bottom HUD on tall screens; low in the corner on short (landscape) ones.
+      j.by = r.bottom - (r.height < 560 ? 16 : 150) - BASE / 2;
       this._scale = 0.9;
       this._drawStick(0, 0);
     }

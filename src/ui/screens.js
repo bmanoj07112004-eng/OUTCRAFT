@@ -711,7 +711,10 @@ let popupSel = { id: null, set: new Set() };
  *                     onNoHearts() (PLAY pressed with 0 hearts)
  */
 export function renderLevelPopup(vm, cb = {}) {
-  if (popupSel.id !== vm.id) popupSel = { id: vm.id, set: new Set(vm.selected || []) };
+  if (popupSel.id !== vm.id) {
+    popupSel = { id: vm.id, set: new Set(vm.selected || []) };
+    $('level-card').scrollTop = 0;
+  }
   for (const b of vm.boosters || []) if (!(b.count > 0)) popupSel.set.delete(b.id);
   const st = MAP_STYLE[vm.themeId] || MAP_STYLE.meadow;
   const card = $('level-card');
@@ -730,7 +733,7 @@ export function renderLevelPopup(vm, cb = {}) {
   card.style.setProperty('--r2', vm.boss ? '#c0223a' : st.rib[1]);
   card.innerHTML = `
     <button class="ibtn ibtn-close" data-act="close" aria-label="Close">${svgIcon('close')}</button>
-    <div class="ribbon"><span>${vm.boss ? 'BOSS · ' : ''}LEVEL ${vm.id}</span></div>
+    <div class="ribbon ${vm.boss ? 'boss' : ''}"><span>${vm.boss ? 'BOSS · ' : ''}LEVEL ${vm.id}</span></div>
     <div class="lp-world">${esc(vm.worldName)} · ${esc(vm.name)}${vm.hard ? ' <i class="tag-hard">HARD</i>' : ''}</div>
     <div class="lp-best">${starsRow(vm.stars || 0, 3, 'lp-star')}</div>
     <div class="vs-row">
@@ -794,6 +797,11 @@ export function renderLevelPopup(vm, cb = {}) {
 /** Booster ids currently selected in the level popup. */
 export function selectedBoosters() {
   return [...popupSel.set];
+}
+
+/** Select a booster in the open level popup (e.g. right after buying one); re-render to show it. */
+export function selectBooster(id) {
+  if (popupSel.id != null) popupSel.set.add(id);
 }
 
 // ------------------------------------------------------------------ notebook (shared by results)
@@ -877,12 +885,15 @@ function countUp(el, to, dur, tick) {
  * @param {number} [vm.hearts]           hearts left
  * @param {string} [vm.heartsText]       time to the next heart
  * @param {NotebookVM} [vm.notebook]     "what the rival learned" (collapsible)
+ * @param {string[]} [vm.notes]          short extra lines (Codex unlocks, new Tells, goals to claim)
  * @param {object} cb  onNext(), onReplay(), onMap(), onRetry()
  */
 export function renderLevelResult(vm, cb = {}) {
   stopResultAnim();
   const card = $('result-card');
+  card.scrollTop = 0;
   const ms = vm.matchStars;
+  const notes = (vm.notes || []).length ? `<div class="lr-notes">${vm.notes.map((n) => `<span>${esc(n)}</span>`).join('')}</div>` : '';
   const vsLine = ms ? `<div class="lr-vs">${avatar({ name: 'You', color: '#3d7bff', portrait: vm.playerPortrait }, 'av-sm')}<b>${ms.player}</b><span>–</span><b style="color:${esc(vm.rival.color)}">${ms.rival}</b>${avatar(vm.rival, 'av-sm')}</div>` : '';
   const quote = vm.quote ? `<div class="lr-quote">${avatar(vm.rival, 'av-sm')}<p>“${esc(vm.quote)}”</p></div>` : '';
   const nb = vm.notebook
@@ -901,7 +912,7 @@ export function renderLevelResult(vm, cb = {}) {
         ${vm.coins ? `<div class="rw rw-coin">${svgIcon('coin')}<b>+<span id="lr-coins">0</span></b></div>` : ''}
         ${vm.gems ? `<div class="rw rw-gem">${svgIcon('gem')}<b>+<span id="lr-gems">0</span></b></div>` : ''}
       </div>
-      ${vsLine}${quote}${nb}
+      ${notes}${vsLine}${quote}${nb}
       <div class="lr-btns">
         ${vm.hasNext ? `<button class="btn btn-green btn-lg" data-act="next"><span class="btn-main">NEXT LEVEL ${svgIcon('play', 'bi-inline')}</span></button>` : ''}
         <div class="row">
@@ -936,7 +947,7 @@ export function renderLevelResult(vm, cb = {}) {
       ${vm.reason ? `<div class="lr-reason">${esc(vm.reason)}</div>` : ''}
       ${vm.tip ? `<div class="lr-tip">${svgIcon('help', 'lr-tip-ic')}<p><b>TIP</b> ${esc(vm.tip)}</p></div>` : ''}
       <div class="lr-score small"><small>SCORE</small><b>${fmt(vm.score || 0)}</b></div>
-      ${vsLine}${quote}${nb}
+      ${notes}${vsLine}${quote}${nb}
       <div class="lr-btns">
         <button class="btn btn-green btn-lg" data-act="retry"><span class="btn-main">RETRY</span><span class="lp-heart">${svgIcon('heart')}<b>1</b></span></button>
         <button class="btn btn-white" data-act="map">${svgIcon('flag', 'bi-inline')} MAP</button>
@@ -975,6 +986,8 @@ export function renderLevelResult(vm, cb = {}) {
  */
 export function renderResults(vm, cb = {}) {
   on('screen-results', cb);
+  const panel = document.querySelector('#screen-results .panel');
+  if (panel) panel.scrollTop = 0;
   const r = vm.rival;
   const col = esc(r.color);
   $('res-title').innerHTML = vm.win ? `YOU OUT-CRAFTED<br><span style="color:${col}">${esc(r.name)}</span>` : `<span style="color:${col}">${esc(r.name)}</span> OUT-CRAFTED YOU`;
@@ -1213,7 +1226,7 @@ export function renderDailyReward(vm, cb = {}) {
  * Achievements list.
  * @param {object} vm
  * @param {Array<{id: string, name: string, desc: string, icon?: string, cur: number, target: number,
- *         done: boolean, claimed: boolean, reward: {label: string, kind?: 'coins'|'gems'|'skin'}}>} vm.list
+ *         done: boolean, claimed: boolean, reward: {label: string, kind?: 'coins'|'gems'|'skin'|'booster'}}>} vm.list
  * @param {object} cb  onClaim(id), onBack()
  */
 export function renderAchievements(vm, cb = {}) {
@@ -1225,7 +1238,7 @@ export function renderAchievements(vm, cb = {}) {
     .map((a) => {
       const k = a.target > 0 ? clamp(a.cur / a.target, 0, 1) : 0;
       const rk = a.reward?.kind || 'coins';
-      const rIc = svgIcon(rk === 'gems' ? 'gem' : rk === 'skin' ? 'crown' : 'coin', 'ar-ic');
+      const rIc = svgIcon(rk === 'gems' ? 'gem' : rk === 'skin' ? 'crown' : rk === 'booster' ? 'gift' : 'coin', 'ar-ic');
       const btn = a.claimed ? `<i class="ach-claimed">${svgIcon('check', 'ac-ic')} DONE</i>` : a.done ? `<button class="btn btn-green btn-sm ach-claim" data-act="claim" data-arg="${esc(a.id)}">CLAIM</button>` : `<i class="ach-reward">${rIc}${esc(a.reward?.label || '')}</i>`;
       return `<div class="ach ${a.claimed ? 'claimed' : a.done ? 'ready' : ''}">
         <span class="ach-ic">${a.icon && !hasIcon(a.icon) ? `<span class="ach-emoji">${esc(a.icon)}</span>` : svgIcon(a.icon || 'trophy')}</span>

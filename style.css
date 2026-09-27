@@ -1379,6 +1379,9 @@ button {
 .lvl-card .ribbon span {
   font-size: clamp(20px, 6.6vw, 26px);
 }
+.lvl-card .ribbon.boss span {
+  font-size: clamp(16px, 5vw, 22px);
+}
 .lp-world {
   margin-top: 2px;
   font-size: 14px;
@@ -1865,6 +1868,23 @@ button {
 .rw .ic {
   width: 30px;
   height: 30px;
+}
+.lr-notes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 5px;
+  margin: 8px 0 0;
+}
+.lr-notes span {
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: #e7f9df;
+  color: #1f7a35;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.3;
+  animation: popIn 0.4s var(--pop) 2.4s both;
 }
 .lr-vs {
   display: flex;

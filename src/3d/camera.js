@@ -54,6 +54,8 @@ export class ThirdPersonCamera {
     this.maxDistance = 16;
     this.autoAlign = true; // turn gently behind the player while running
     this.lookAhead = 0.22; // aim point ahead of the player, as a fraction of the distance
+    this.lift = 0; // extra pitch (rad) on top of the follow goal, e.g. to look over a building in the way
+    this._liftNow = 0; // eased lift
 
     this._mode = 'follow';
     this._time = 0;
@@ -329,8 +331,10 @@ export class ThirdPersonCamera {
     r.py = lerp(r.py, SHOULDER, ease(6, dt));
 
     const a = ease(ANGLE_RATE, dt);
+    const lift = Number.isFinite(this.lift) ? this.lift : 0;
+    this._liftNow += (lift - this._liftNow) * ease(lift > this._liftNow ? 5 : 2, dt);
     r.y += wrap(this.yaw - r.y) * a;
-    r.p += (this.pitch - r.p) * a;
+    r.p += (clamp(this.pitch + this._liftNow, this.minPitch, this.maxPitch) - r.p) * a;
     r.d += (this.distance - r.d) * ease(DIST_RATE, dt);
     r.lead += (this.lookAhead - r.lead) * ease(4, dt);
   }

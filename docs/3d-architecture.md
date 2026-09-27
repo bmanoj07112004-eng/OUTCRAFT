@@ -349,3 +349,32 @@ Screens (HTML sections in `index.html`, rendered by `screens.js` from the save s
 - `node tools/levels.mjs` prints per-level win and star rates for bot players.
 - `dev/*.html` harness pages render each 3D module alone; Playwright screenshots in headless Chromium
   (SwiftShader WebGL) are used to check visuals at phone (390 x 844) and desktop (1280 x 800) sizes.
+
+## Integration notes (how main.js wires things)
+
+The controller is split into a boot/loop file and four small modules under `src/game/`:
+
+| File | Role |
+|---|---|
+| `src/main.js` | Boot (WebGL check -> fallback screen linking `classic/`, loading screen, `store.load()`, settings applied to audio/engine/input), creates `Engine`, `Island3D`, `FX`, `ThirdPersonCamera`, `Stage`, `Input`, `HUD`; one `requestAnimationFrame` loop; keyboard/visibility listeners; the `window.__outcraft` test hooks. |
+| `src/game/app.js` | Shared context (`app.state`, `app.model`, the 3D objects, `app.mode` = `boot` / `menu` / `play` / `paused` / `over`), the **game clock** and a scheduler on it (`later(ms, fn, tag)`, `cancelLater`, `shiftLater`). Every timed thing in a match (VS splash, delayed feedback, results) runs on it, so `advance(ms)` can fast-forward and a pause simply shifts the `'match'` jobs. |
+| `src/game/stage.js` | The match on screen (real or attract): `load(match, theme, skin, rivalDef)` rebuilds the island and dresses the player / rival / villager; `update()` moves the characters from the sim (tile -> world via coords, snaps to tiles are eased, heading from `vx/vy` or toward the node / bench, state, carry = bag, emotes on the game clock), builds the island view (`need`, both targets, `rivalFirst` from the `dev/island.html` eta logic, glass) and the rival route line. |
+| `src/game/play.js` | In-match controller: `startLevel(id, boosters)` (`canStartLevel`, `matchConfig` + `useBoosters` + `settings.autoReturn`, theme `WORLDS[level.world].theme`), `startDaily()`, `startQuick(i)`; stages `vs` -> `intro` (camera fly-in, the sim starts stepping 0.35 s in so the order is posted mid-flight) -> `play` -> `end` (victory orbit, cheer/sad) -> results. Fixed 1/60 s steps; per frame stick -> `cam.moveFromStick` -> `match.setMove(d.x, d.z)`, look/zoom -> camera; HUD refresh; every sim event mapped to FX + HUD + sfx + haptics. Also tap / interact / home, pause / resume / quit (a level quit costs a heart after a confirm; a decided match is finished and recorded instead), restart, the level-1 tutorial, time warnings. |
+| `src/game/attract.js` | Title-screen attract mode: a tap-mode bot races the real rival AI on a random island of the player's current world (quiet, no HUD), camera `menuOrbit`. It pauses behind opaque menus. |
+| `src/game/menus.js` | Save state -> view models for `src/ui/screens.js` and every menu flow: title (badges, dossier), map + level popup (booster buy, out-of-hearts refill dialog), shop (3D `Preview`, buy / equip -> the player character changes at once), daily reward, achievements, codex + tells (+ forget), settings (quality / sound / music / sensitivity / invertY / autoReturn / glass / reset), how to play, about, the Quick Race ladder, both result screens, pause, the currency top bar with the live heart countdown, and menu keys (Escape = back / close / resume, Enter = the main button). |
+
+Results: Adventure calls `store.recordMatch(state, summary, { now })` without `rivalIndex`, then
+`economy.grantLevelResult`, and `loseHeart` on a fail; Quick Race / Daily call `recordMatch` with the ladder /
+daily context and `economy.recordQuickRace`. The shared `PlayerModel` is saved after Adventure and Quick Race
+matches (the Daily uses a fresh model). `?glass=1` turns the glass setting on; `?blind=1` switches the rival's
+reads off (as in the 2D game).
+
+Small module changes made during integration: `camera.lift` (extra follow pitch; `play.js` raises it when the
+Workshop hut would hide the player), the floating order card fades when the camera is close
+(`island.update`), the resting joystick hint sits low on short screens (`input.js`), `screens.selectBooster()`,
+level-result `notes` (Codex unlocks, new Tells, unlocks), a booster reward icon in achievements, scroll resets
+for the result / popup cards, and a narrower boss ribbon.
+
+Test hooks: `window.__outcraft = { match, mode, state, engine, screen, play, app, menus, advance(ms), hold(on),
+startLevel(id, boosters?), startDaily(), startQuick(i), setStick(x, y), tap(x, y), skipIntro() }`. `hold(true)`
+stops the real-time loop and the game clock so screenshots show exactly what `advance()` produced.
