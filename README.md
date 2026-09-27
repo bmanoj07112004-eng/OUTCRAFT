@@ -1,16 +1,59 @@
 # OUTCRAFT
 
-OUTCRAFT is a fast-paced crafting race where players explore a small island, collect scarce resources, and craft target
-items before their AI rival. The rival learns your movement and gathering habits, predicts your next move, and adapts its
-strategy. Outsmart the AI, master crafting, earn stars, and climb through increasingly challenging rivals.
+OUTCRAFT is a fast-paced 3D crafting race where you explore a small island in third person, collect scarce resources,
+and craft target items before your AI rival. The rival learns your movement and gathering habits, predicts your next
+move, and adapts its strategy. Outsmart the AI, master crafting, earn stars, and climb through 60 levels across six
+worlds.
 
 ## ▶ [Play in the browser](https://bmanoj07112004-eng.github.io/OUTCRAFT/): one click, nothing to install, phone or laptop
 
-**Submission for the Lila Games Game Designer Written Test (Part 1)** · by **B Manoj**
+**by B Manoj** · The original 2D prototype submitted for the Lila Games Game Designer Written Test (Part 1) is kept,
+unchanged and playable, at [**/classic/**](https://bmanoj07112004-eng.github.io/OUTCRAFT/classic/).
 
 ---
 
+## The 3D edition
+
+| | |
+|---|---|
+| **Third-person 3D** | Run around a low-poly island with a follow camera: joystick on phones, WASD and mouse on desktop |
+| **Adventure** | A Candy Crush style level map: **60 levels** in **6 worlds** (Meadow Isle, Sunny Dunes, Frost Fjord, Ember Peak, Crystal Caverns, Sky Gardens), a boss rival at the end of each world, up to **3 stars** per level from your score |
+| **Rivals** | PIP, WREN, FOX, RAVEN and MIMIC, each reading more of your habits; they share one notebook about you |
+| **Shop** | **13 skins** (Common to Legendary, with hats, capes, jetpacks, wings and sparkle trails), boosters and hearts, all bought with coins and gems you **earn by playing**. No real money |
+| **Boosters** | Speed Boots (run 12% faster), Big Backpack (+1 bag slot), Head Start (the rival waits 2.5 s each order), Fog Cloak (the rival can't read you in the first order) |
+| **Hearts** | 5 hearts; you only lose one when you fail or quit a level; one comes back every 20 minutes (or refill with gems) |
+| **Every day** | A 7-day login calendar (day 7: the Festival Lights skin), the Daily Commission (same island for everyone), 13 achievements |
+| **Still here** | Codex of 12 items, Tells (habits the rivals caught you in), "what the rival learned about you" after every match, share cards |
+
+## How to play
+
+1. The villager posts an **order**. The card at the top shows its recipe (e.g. Lantern = Glass (Sand + Wood) + Iron (Ore + Wood)).
+2. **Run into a glowing resource** to gather it. Your bag holds 3.
+3. **Run into the Workshop** to drop things off. Parts craft themselves.
+4. Finish the item before your rival. **First to 3 orders wins.**
+
+| | Phone | Desktop |
+|---|---|---|
+| Move | left thumb: joystick (appears where you touch) | WASD / arrow keys |
+| Look | drag with the right thumb, pinch to zoom | drag with the mouse, wheel to zoom |
+| Auto-run | tap a resource, the Workshop or the ground | click |
+| Grab a resource the order doesn't need | GRAB button | E |
+| Run home to the Workshop | HOME button | Space or H |
+| Pause | pause button | P or Esc |
+
+Your rival races you for the same scarce resources. Its dotted route line shows where it is going; when it heads for
+*your* target a pill shows who will get there first (**FOX FIRST** / **YOU FIRST**). Every snatch comes with an honest
+reason and a counter-tip: *"WREN predicted you. You walk to the nearest one, 7 of 9 trips. Try a farther one."* Take a
+resource it was sure you wanted and you **FAKE IT OUT**.
+
+Extras: add [`?glass=1`](https://bmanoj07112004-eng.github.io/OUTCRAFT/?glass=1) to see the rival's % guess on every
+resource (also in Settings), or [`?blind=1`](https://bmanoj07112004-eng.github.io/OUTCRAFT/?blind=1) to race a rival
+whose reads are switched off.
+
 ## For Lila reviewers: where each requirement is answered
+
+The written answers describe the 2D prototype that was submitted; it lives on unchanged in [`classic/`](classic/). The
+3D edition described in the rest of this README was built afterwards on the same simulation and rival AI.
 
 | Lila asked for | Where it is |
 |---|---|
@@ -28,7 +71,7 @@ strategy. Outsmart the AI, master crafting, earn stars, and climb through increa
 | **Q3** one innovative survivor-like feature, fully specified, with wireframes | [docs/Q3-echoes-feature-spec.md](docs/Q3-echoes-feature-spec.md) · [wireframes](docs/wireframes/) |
 | Sources, assumptions and AI output disclosed | a "Sources, assumptions & AI use" section at the end of every document |
 | Complete game design document (all systems, feel, retention, revenue) | [docs/OUTCRAFT-game-design.md](docs/OUTCRAFT-game-design.md) |
-| Evidence you can re-run | [docs/data/](docs/data/) (simulations) · `node tools/test.mjs` (11 tests) |
+| Evidence you can re-run | [docs/data/](docs/data/) (simulations) · `node tools/test.mjs` (27 tests) |
 
 **One thread runs through all three answers:** *design systems that read players, and let players read them back.* In Q1
 the rival reads your routes; in Q2 social deduction is a game about reading people; in Q3 your build lives on as an
@@ -46,49 +89,26 @@ AI-piloted rival that reads other players.
   never your taps), its target is always on screen, and it never claims a habit that chance could explain.
 - **Why it fits mobile:** one-minute matches, one thumb, tiny download, works offline, low-end Android friendly.
 
-## How to play
-
-1. The villager posts an **order**. The card at the top shows its recipe (e.g. Lantern = Glass (Sand + Wood) + Iron (Ore + Wood)).
-2. **Tap a resource with a gold ring** to walk over and gather it. Your bag holds 3.
-3. Tap the **Workshop** (or the ⌂ button) to drop things off. Parts craft themselves.
-4. Finish the item before your rival. **First to 3 orders wins.**
-
-Your rival races you for the same scarce resources. Its dotted line shows where it is going; when it heads for *your*
-target a pill shows who will get there first (**FOX FIRST** / **YOU FIRST**). Every snatch comes with an honest reason and
-a counter-tip: *"WREN predicted you. You walk to the nearest one, 7 of 9 trips. Try a farther one."* Take a resource it was
-sure you wanted and you **FAKE IT OUT**. After each match, *"What FOX learned about you"* shows how often it guessed right.
-
-Desktop: click to move · arrows/WASD step · Space = Workshop · P = pause.
-Extras: add [`?glass=1`](https://bmanoj07112004-eng.github.io/OUTCRAFT/?glass=1) to see the rival's % guess on every
-resource, or [`?blind=1`](https://bmanoj07112004-eng.github.io/OUTCRAFT/?blind=1) to race a rival whose reads are
-switched off (used for the "can players tell?" test).
-
-## What's in the game
-
-| System | What it does |
-|---|---|
-| **Island** | 9×13 procedurally generated island per match; 13 resource nodes (1 unit each, regrow in 6.5 to 12 s) |
-| **Crafting** | 6 resources → 7 components → **12 items** in 5 tiers (Torch … Telescope … Clock); parts auto-craft at the Workshop |
-| **Match** | up to 5 orders of rising tier; first to 3 stars; about one minute |
-| **Rival ladder** | PIP (only takes notes) → WREN → FOX → RAVEN → MIMIC, each reading more of your habits; all share one notebook about you |
-| **Feel** | VS splash, living title screen, rival personalities and speech bubbles, crafting pops, music and haptics, confetti |
-| **Day-1 hooks** | rivals remember you · Daily Commission + streak + share card · Codex · Tells to detect and break |
-
-### Day-1 hooks that are built
+## Day-1 hooks that are built
 
 1. **The rivals remember you.** Come back tomorrow and the title screen greets you by time away and quotes your
    statistically real habits ("You usually walk to the nearest one: 78% of trips, when chance says 41%").
 2. **Daily Commission.** Same island and twist for everyone that day, one counted attempt, a streak, a share card:
    `OUTCRAFT · Daily #4 (Rush Hour) / Out-crafted FOX 3–1 · snatched 2× / 🟦🟦🟧🟦`.
 3. **Codex** of 12 items, a **rival ladder** of 5, and **Tells** (your habits) to detect and then break.
+4. **3D edition:** the next level on the map, stars to improve, a 7-day reward calendar, achievements to claim and hearts
+   that refill while you are away.
 
-### How it makes money (short version)
+## How it makes money (short version)
 
 Never sell an advantage against an AI whose promise is fairness. Revenue comes from a **Workshop Pass** season
 (₹149 to ₹249 · $4.99), **cosmetics** (₹19 to ₹99 sachets), a one-time **Supporter pack**, **opt-in rewarded ads** (never
 mid-race, never after a loss), festival events and, later, creator islands. The rival's knowledge of you is never used for
 prices or offers, and there are no real-money mechanics. Full model with illustrative economics:
 [design doc §10](docs/OUTCRAFT-game-design.md#10-revenue-how-outcraft-makes-money-without-a-cash-grab).
+
+The 3D edition's shop has no real-money store at all: skins, boosters and heart refills cost only coins and gems earned by
+playing, so boosters are something you win, never something you buy.
 
 ## The AI, and what the evidence says
 
@@ -110,28 +130,36 @@ Measured with bot-player simulations (raw output in [docs/data/](docs/data/)):
 
 ## Run it locally
 
-No build step, no dependencies:
+No build step, no dependencies to install (three.js r170 is vendored in [`vendor/three/`](vendor/three/), MIT licence):
 
 ```
 node tools/serve.mjs 8080        # then open http://localhost:8080
-node tools/test.mjs              # 11 invariant tests (islands, deadlocks, crafting, AI honesty, saves)
+node tools/test.mjs              # 27 simulation tests (islands, crafting, free movement, AI honesty, score, saves)
+node tools/test-meta.mjs         # 17 tests for levels, economy, hearts, shop, daily rewards, achievements, save migration
+node tools/levels.mjs 40         # Adventure calibration: joystick-style bot players through all 60 levels
 node tools/sim.mjs 150           # balance: bot players vs every rival
 node tools/tune.mjs 150          # ablation: full AI vs the same rival with its reads switched off
 node tools/learning.mjs 50 6     # does the rival learn you? accuracy per match vs chance
 node tools/audit.mjs 150 300 15  # control arms + honesty over repeated looks
-node tools/experiment.mjs        # try economy / rival settings
 ```
+
+Harness pages for each 3D and UI module live in [`dev/`](dev/) (e.g. `http://localhost:8080/dev/island.html?theme=3`).
+The module contracts are in [docs/3d-architecture.md](docs/3d-architecture.md).
 
 ## Code map
 
 | File | What it does |
 |---|---|
 | [`src/model.js`](src/model.js) | The player model: 5 habit experts, lift statistics, fixed-share Hedge, honest explanations, significance-gated claims |
-| [`src/match.js`](src/match.js) | Pure, fixed-step match simulation: movement, gathering, Workshop crafting, orders, the rival's decisions |
+| [`src/match.js`](src/match.js) | Pure, fixed-step match simulation: tap and free (joystick) movement, gathering, Workshop crafting, orders, score, the rival's decisions |
 | [`src/world.js`](src/world.js) | Seeded island generator and BFS distance fields |
-| [`src/data.js`](src/data.js) | Resources, recipes, 12 items, 5 rivals (with personalities), Daily twists |
-| [`src/render.js`](src/render.js), [`src/icons.js`](src/icons.js) | Canvas renderer and procedural art (no image files) |
-| [`src/main.js`](src/main.js), [`src/storage.js`](src/storage.js), [`src/audio.js`](src/audio.js) | Game flow and UI, local saves and day-1 systems, synthesised sound and music |
+| [`src/data.js`](src/data.js), [`src/levels.js`](src/levels.js) | Resources, recipes, 12 items, 5 rivals, twists, score table; the 60 Adventure levels |
+| [`src/economy.js`](src/economy.js), [`src/storage.js`](src/storage.js), [`src/skins.js`](src/skins.js) | Coins, gems, hearts, shop, boosters, daily rewards, achievements; local saves; skin catalogue |
+| [`src/3d/`](src/3d/) | three.js engine, island and themes, effects, procedural characters and portraits, third-person camera, touch/keyboard input |
+| [`src/ui/`](src/ui/), [`index.html`](index.html), [`style.css`](style.css) | Menus, level map, shop, results and the in-match HUD (HTML over the canvas) |
+| [`src/game/`](src/game/), [`src/main.js`](src/main.js) | Game controller: boot and loop, match flow and feedback, menus, title-screen attract mode |
+| [`src/audio.js`](src/audio.js), [`src/icons.js`](src/icons.js) | Synthesised sound and music; procedural item icons for the UI |
+| [`classic/`](classic/) | The original 2D prototype (Lila Games submission), frozen and playable |
 | [`archive/unreadable-v1/`](archive/unreadable-v1/) | The first prototype (a rhythm duel vs a predicting AI), kept as process evidence |
 
 ## About
