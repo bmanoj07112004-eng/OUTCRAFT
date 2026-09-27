@@ -153,22 +153,6 @@ export const DEPOSIT_TIME = 0.25;
 export const BAG_SIZE = 3;
 export const STARS_TO_WIN = 3;
 
-// Adventure score (Candy Crush style): the player earns points for good play during a match; each
-// level in levels.js sets the score needed for 2 and 3 stars (winning the match earns the first star).
-// An order won faster than parSeconds[tier] (measured from GO to the item completing) earns
-// perSecondUnderPar points for every second saved. Only the player scores; the rival never does.
-export const SCORE = {
-  gather: 10,
-  craft: 60,
-  order: 500,
-  parSeconds: [0, 14, 17, 20, 23, 27],
-  perSecondUnderPar: 30,
-  outread: 150,
-  fooled: 250,
-  matchWin: 1000,
-  flawless: 500,
-};
-
 // Daily Commission twists: the same island, orders and twist for every player on a given date.
 // The Daily rival always starts with no memory of you, so everyone's result is comparable.
 export const DAILY_TWISTS = [
